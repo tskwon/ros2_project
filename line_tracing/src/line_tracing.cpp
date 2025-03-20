@@ -21,7 +21,7 @@ public:
         );
 
         // 초기 설정
-        base_speed_ = 40.0;  // 목표 속도
+        base_speed_ = 20.0;  // 목표 속도
         current_speed_ = 0.0;  // 현재 속도 (멈춘 상태에서 시작)
         left_rpm_ = 0.0;
         right_rpm_ = 0.0;
@@ -31,14 +31,14 @@ public:
         is_stopped_ = true;  // 초기 상태: 멈춤
 
         // PID 상수
-        Kp_ = 5.0;
-        Ki_ = 0.2;
-        Kd_ = 5.0;
+        Kp_ = 2;
+        Ki_ = 0.07;
+        Kd_ = 2.0;
         use_pid_ = false;  // PID 끔
         is_run_ = true;
 
         // 속도 증가율 (부드러운 시작)
-        speed_ramp_rate_ = 5.0;  // 초당 증가 속도 (조정 가능)
+        speed_ramp_rate_ = 2.0;  // 초당 증가 속도 (조정 가능)
 
         RCLCPP_INFO(this->get_logger(), "Line Tracing Node started (PID: %s)", use_pid_ ? "ON" : "OFF");
     }
@@ -56,15 +56,14 @@ public:
 
 private:
     void sensor_callback(const std_msgs::msg::Int32MultiArray::SharedPtr msg) {
-        if(!is_run_) return;
-
+        
         auto sensor_values = msg->data;
-
+        
         if (sensor_values.size() != 5) {
             RCLCPP_WARN(this->get_logger(), "Invalid sensor data size: %zu", sensor_values.size());
             return;
         }
-
+        
         // 센서 값으로 에러 계산
         double position = 0.0;
         int active_sensors = 0;
@@ -75,11 +74,11 @@ private:
             }
         }
         if (active_sensors > 0) {
-            error_ = position / active_sensors;
+            error_ = position ;
         } else {
             error_ = prev_error_;
         }
-
+        
         // 속도 점진적 증가
         if (is_stopped_) {
             current_speed_ += speed_ramp_rate_;  // 속도 증가
@@ -88,20 +87,21 @@ private:
                 is_stopped_ = false;  // 주행 상태로 전환
             }
         }
-
+        
         integral_ += error_;
         double derivative = error_ - prev_error_;
         double correction = Kp_ * error_ + Ki_ * integral_ + Kd_ * derivative;
-
+        
         left_rpm_ = current_speed_ + correction;
         right_rpm_ = current_speed_ - correction;
-
+        
         left_rpm_ = std::max(-100.0, std::min(100.0, left_rpm_));
         right_rpm_ = std::max(-100.0, std::min(100.0, right_rpm_));
-
+        
         prev_error_ = error_;
         
-
+        
+        if(!is_run_) return;
         // RPM 발행
         auto rpm_msg = std_msgs::msg::Int32MultiArray();
         rpm_msg.data = {-static_cast<int32_t>(left_rpm_), static_cast<int32_t>(right_rpm_)};

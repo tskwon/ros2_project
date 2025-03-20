@@ -58,7 +58,7 @@ int main(int argc, char *argv[]) {
     while (rclcpp::ok()) {
         ReceiveDataFromController(Motor.InitMotor);
 
-        if (++byCnt2500us == 50) {
+        if (++byCnt2500us == 10) {
             byCnt2500us = 0;
 
             if (fgInitsetting == ON) {

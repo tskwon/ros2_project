@@ -34,7 +34,8 @@ def generate_launch_description():
         package='line_tracing',
         executable='line_tracing',
         name='line_tracing_node',
-        output='screen'
+        output='screen',
+        arguments=['--ros-args', '--log-level', 'INFO']
     )
 
     # 런치 설명 생성
