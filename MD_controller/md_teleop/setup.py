@@ -20,7 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            "md_teleop_key_node=md_teleop.md_teleop_key:main"
+            "md_teleop=md_teleop.md_teleop:main"
         ],
     },
 )

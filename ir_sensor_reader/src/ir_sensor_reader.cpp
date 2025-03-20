@@ -4,7 +4,7 @@
 
 class IRSensorReader : public rclcpp::Node {
 public:
-    IRSensorReader() : Node("ir_sensor_reader") {
+    IRSensorReader() : Node("ir_sensor_reader_node") {
         // Publisher 설정 (5개 센서 값을 배열로 퍼블리시)
         ir_publisher_ = this->create_publisher<std_msgs::msg::Int32MultiArray>("/ir_sensor_data", 10);
         

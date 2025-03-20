@@ -47,7 +47,11 @@ class TeleopKey(Node):
             elif key == 'd':
                 self.left_rpm = self.check_rpm_limit(self.left_rpm + VEL_STEP_SIZE)
                 self.right_rpm = self.check_rpm_limit(self.right_rpm - VEL_STEP_SIZE)
-
+                
+            elif key == ' ':
+                self.left_rpm = 0
+                self.right_rpm = 0
+                
             rpm_msg = Int32MultiArray()
             rpm_msg.data = [-self.left_rpm, self.right_rpm]
             self.cmd_rpm_pub.publish(rpm_msg)
