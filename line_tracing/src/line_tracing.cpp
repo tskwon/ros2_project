@@ -1,4 +1,5 @@
 #include <rclcpp/rclcpp.hpp>
+#include "rcl_interfaces/msg/set_parameters_result.hpp"
 #include <std_msgs/msg/int32_multi_array.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <csignal>
@@ -20,27 +21,49 @@ public:
             std::bind(&LineTracingNode::stop_callback, this, std::placeholders::_1)
         );
 
-        // 초기 설정
-        base_speed_ = 20.0;  // 목표 속도
-        current_speed_ = 0.0;  // 현재 속도 (멈춘 상태에서 시작)
+        this->declare_parameter<double>("Kp", 2.0);
+        this->declare_parameter<double>("Ki", 0.0);
+        this->declare_parameter<double>("Kd", 0.0);
+
+        this->get_parameter("Kp", Kp_);
+        this->get_parameter("Ki", Ki_);
+        this->get_parameter("Kd", Kd_);
+
+        param_callback_handle_ = this->add_on_set_parameters_callback(
+            std::bind(&LineTracingNode::param_callback, this, std::placeholders::_1)
+        );
+
+        base_speed_ = 20.0;
+        current_speed_ = 0.0;
         left_rpm_ = 0.0;
         right_rpm_ = 0.0;
         error_ = 0.0;
         prev_error_ = 0.0;
         integral_ = 0.0;
-        is_stopped_ = true;  // 초기 상태: 멈춤
-
-        // PID 상수
-        Kp_ = 2;
-        Ki_ = 0.07;
-        Kd_ = 2.0;
-        use_pid_ = false;  // PID 끔
+        is_stopped_ = true;
         is_run_ = true;
+        speed_ramp_rate_ = 2.0;
 
-        // 속도 증가율 (부드러운 시작)
-        speed_ramp_rate_ = 2.0;  // 초당 증가 속도 (조정 가능)
+        RCLCPP_INFO(this->get_logger(), "Line Tracing Node started (PID dynamic: ON)");
+        RCLCPP_INFO(this->get_logger(), "Initial PID: Kp=%.2f, Ki=%.2f, Kd=%.2f", Kp_, Ki_, Kd_);
+    }
 
-        RCLCPP_INFO(this->get_logger(), "Line Tracing Node started (PID: %s)", use_pid_ ? "ON" : "OFF");
+    rcl_interfaces::msg::SetParametersResult param_callback(const std::vector<rclcpp::Parameter>& params) {
+        rcl_interfaces::msg::SetParametersResult result;
+        result.successful = true;
+        result.reason = "PID parameters updated";
+
+        for (const auto& param : params) {
+            if (param.get_name() == "Kp") {
+                Kp_ = param.as_double();
+            } else if (param.get_name() == "Ki") {
+                Ki_ = param.as_double();
+            } else if (param.get_name() == "Kd") {
+                Kd_ = param.as_double();
+            }
+        }
+        RCLCPP_INFO(this->get_logger(), "Updated PID params: Kp=%.2f, Ki=%.2f, Kd=%.2f", Kp_, Ki_, Kd_);
+        return result;
     }
 
     void stop_motors() {
@@ -56,58 +79,56 @@ public:
 
 private:
     void sensor_callback(const std_msgs::msg::Int32MultiArray::SharedPtr msg) {
-        
         auto sensor_values = msg->data;
-        
+
         if (sensor_values.size() != 5) {
             RCLCPP_WARN(this->get_logger(), "Invalid sensor data size: %zu", sensor_values.size());
             return;
         }
-        
-        // 센서 값으로 에러 계산
+
         double position = 0.0;
+
+        
         int active_sensors = 0;
         for (int i = 0; i < 5; ++i) {
             if (sensor_values[i] == 1) {
-                position += (i - 2);  // -2, -1, 0, 1, 2
+                position += sensor_weight[i];
                 active_sensors++;
             }
         }
+
         if (active_sensors > 0) {
-            error_ = position ;
+            error_ = position;
         } else {
             error_ = prev_error_;
         }
-        
-        // 속도 점진적 증가
+
         if (is_stopped_) {
-            current_speed_ += speed_ramp_rate_;  // 속도 증가
+            current_speed_ += speed_ramp_rate_;
             if (current_speed_ >= base_speed_) {
                 current_speed_ = base_speed_;
-                is_stopped_ = false;  // 주행 상태로 전환
+                is_stopped_ = false;
             }
         }
-        
+
         integral_ += error_;
         double derivative = error_ - prev_error_;
         double correction = Kp_ * error_ + Ki_ * integral_ + Kd_ * derivative;
-        
+
         left_rpm_ = current_speed_ + correction;
         right_rpm_ = current_speed_ - correction;
-        
-        left_rpm_ = std::max(-100.0, std::min(100.0, left_rpm_));
-        right_rpm_ = std::max(-100.0, std::min(100.0, right_rpm_));
-        
+
+        left_rpm_ = std::clamp(left_rpm_, -100.0, 100.0);
+        right_rpm_ = std::clamp(right_rpm_, -100.0, 100.0);
+
         prev_error_ = error_;
-        
-        
-        if(!is_run_) return;
-        // RPM 발행
+
+        if (!is_run_) return;
+
         auto rpm_msg = std_msgs::msg::Int32MultiArray();
-        rpm_msg.data = {-static_cast<int32_t>(left_rpm_), static_cast<int32_t>(right_rpm_)};
+        rpm_msg.data = {static_cast<int32_t>(left_rpm_), -static_cast<int32_t>(right_rpm_)};
         rpm_pub_->publish(rpm_msg);
 
-        // 디버깅 출력: %d → %f로 변경
         std::string sensor_str = "[";
         for (size_t i = 0; i < sensor_values.size(); ++i) {
             sensor_str += std::to_string(sensor_values[i]);
@@ -119,32 +140,30 @@ private:
     }
 
     void stop_callback(const std_msgs::msg::Bool::SharedPtr msg) {
-            is_run_ = !msg->data;
-            is_stopped_ = true;
-            stop_motors();
-            RCLCPP_INFO(this->get_logger(), "Received stop signal, motors stopped");
-        
+        is_run_ = !msg->data;
+        is_stopped_ = true;
+        stop_motors();
+        RCLCPP_INFO(this->get_logger(), "Received stop signal, motors stopped");
     }
 
     rclcpp::Publisher<std_msgs::msg::Int32MultiArray>::SharedPtr rpm_pub_;
     rclcpp::Subscription<std_msgs::msg::Int32MultiArray>::SharedPtr sensor_sub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr stop_sub_;
-
-    double base_speed_;       // 목표 속도
-    double current_speed_;    // 현재 속도
+    rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_callback_handle_;
+    int sensor_weight[5] = {-2,-1,0,1,2};
+    double base_speed_;
+    double current_speed_;
     double left_rpm_;
     double right_rpm_;
     double error_;
     double prev_error_;
     double integral_;
     double Kp_, Ki_, Kd_;
-    bool use_pid_;
-    bool is_stopped_;         // 멈춤 상태 플래그
+    bool is_stopped_;
     bool is_run_;
-    double speed_ramp_rate_;  // 속도 증가율
+    double speed_ramp_rate_;
 };
 
-// 전역 노드 포인터
 static std::shared_ptr<LineTracingNode> global_node;
 
 void signal_handler(int signum) {

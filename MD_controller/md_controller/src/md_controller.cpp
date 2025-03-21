@@ -68,10 +68,10 @@ int main(int argc, char *argv[]) {
                     if (SendCmdRpm) {
                         left = Short2Byte(Motor.left_rpm);
                         right = Short2Byte(Motor.right_rpm);
-                        nArray[0] = left.byLow;
-                        nArray[1] = left.byHigh;
-                        nArray[2] = right.byLow;
-                        nArray[3] = right.byHigh;
+                        nArray[0] = right.byLow;
+                        nArray[1] = right.byHigh;
+                        nArray[2] = left.byLow;
+                        nArray[3] = left.byHigh;
 
                         if (Motor.left_rpm == 0 && Motor.right_rpm == 0) {
                             PutMdData(PID_PNT_TQ_OFF, Com.nIDMDT, Motor.ID, nArray);

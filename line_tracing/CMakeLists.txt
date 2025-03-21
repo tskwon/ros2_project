@@ -9,9 +9,10 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(rcl_interfaces REQUIRED)
 
 add_executable(line_tracing src/line_tracing.cpp)
-ament_target_dependencies(line_tracing rclcpp std_msgs)
+ament_target_dependencies(line_tracing rclcpp std_msgs rcl_interfaces)
 
 install(TARGETS
   line_tracing

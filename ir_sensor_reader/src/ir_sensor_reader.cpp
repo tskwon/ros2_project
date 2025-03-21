@@ -13,8 +13,8 @@ public:
                                          std::bind(&IRSensorReader::publish_sensor_data, this));
 
         // GPIO 핀 번호 설정
-        // ir_pins_ = {17,18,27,22,23};  // Raspberry Pi 기준 GPIO 핀 번호
-        ir_pins_ = {23,22,27,18,17};  // Raspberry Pi 기준 GPIO 핀 번호
+        ir_pins_ = {17,18,27,22,23};  // Raspberry Pi 기준 GPIO 핀 번호
+        // ir_pins_ = {23,22,27,18,17};  // Raspberry Pi 기준 GPIO 핀 번호
             
         // GPIO 초기화
         wiringPiSetupGpio();
