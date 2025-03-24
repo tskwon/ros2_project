@@ -103,6 +103,10 @@ typedef struct {
     BYTE byHigh;
 }IByte;
 
+extern Communication Com;
+extern MotorVar Motor;
+
+
 extern IByte Short2Byte(short sIn);
 extern int Byte2Short(BYTE byLow, BYTE byHigh);
 extern int Byte2LInt(BYTE byData1, BYTE byData2, BYTE byData3, BYTE byData4);

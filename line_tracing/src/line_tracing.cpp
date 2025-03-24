@@ -23,7 +23,7 @@ public:
 
         this->declare_parameter<double>("Kp", 2.0);
         this->declare_parameter<double>("Ki", 0.0);
-        this->declare_parameter<double>("Kd", 0.0);
+        this->declare_parameter<double>("Kd", 2.0);
 
         this->get_parameter("Kp", Kp_);
         this->get_parameter("Ki", Ki_);
@@ -98,9 +98,13 @@ private:
         }
 
         if (active_sensors > 0) {
+            is_run_ = true;
             error_ = position;
         } else {
-            error_ = prev_error_;
+            is_run_ = false;
+            is_stopped_ = true;
+            stop_motors();
+            return;
         }
 
         if (is_stopped_) {
@@ -118,8 +122,8 @@ private:
         left_rpm_ = current_speed_ + correction;
         right_rpm_ = current_speed_ - correction;
 
-        left_rpm_ = std::clamp(left_rpm_, -100.0, 100.0);
-        right_rpm_ = std::clamp(right_rpm_, -100.0, 100.0);
+        left_rpm_ = std::clamp(left_rpm_, 0.0, 50.0);
+        right_rpm_ = std::clamp(right_rpm_, 0.0, 50.0);
 
         prev_error_ = error_;
 
@@ -150,7 +154,7 @@ private:
     rclcpp::Subscription<std_msgs::msg::Int32MultiArray>::SharedPtr sensor_sub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr stop_sub_;
     rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_callback_handle_;
-    int sensor_weight[5] = {-2,-1,0,1,2};
+    int sensor_weight[5] = {-1,-2,0,2,1};
     double base_speed_;
     double current_speed_;
     double left_rpm_;

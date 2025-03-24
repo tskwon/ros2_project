@@ -1,6 +1,8 @@
 #include "md_controller/com.hpp"
 
 serial::Serial ser;
+Communication Com;
+MotorVar Motor;
 
 // Get the low and high byte from short
 IByte Short2Byte(short sIn)
