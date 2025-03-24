@@ -21,9 +21,9 @@ public:
             std::bind(&LineTracingNode::stop_callback, this, std::placeholders::_1)
         );
 
-        this->declare_parameter<double>("Kp", 2.0);
+        this->declare_parameter<double>("Kp", 1.2);
         this->declare_parameter<double>("Ki", 0.0);
-        this->declare_parameter<double>("Kd", 2.0);
+        this->declare_parameter<double>("Kd", 2.65);
 
         this->get_parameter("Kp", Kp_);
         this->get_parameter("Ki", Ki_);
@@ -154,7 +154,7 @@ private:
     rclcpp::Subscription<std_msgs::msg::Int32MultiArray>::SharedPtr sensor_sub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr stop_sub_;
     rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_callback_handle_;
-    int sensor_weight[5] = {-1,-2,0,2,1};
+    double sensor_weight[5] = {-2.5,-1.5,0,1.5,2.5};
     double base_speed_;
     double current_speed_;
     double left_rpm_;

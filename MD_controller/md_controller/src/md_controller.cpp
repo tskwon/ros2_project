@@ -60,7 +60,7 @@ private:
         ReceiveDataFromController(Motor.InitMotor);
 
         if (fgInitsetting == ON) {
-            if (++byCntControl >= 5) {  // 약 100ms 주기
+            if (++byCntControl >= 1) {  
                 byCntControl = 0;
 
                 if (SendCmdRpm) {
