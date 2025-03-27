@@ -44,7 +44,7 @@ public:
         InitSerial(); // 통신 초기화
 
         timer_ = this->create_wall_timer(
-            std::chrono::milliseconds(10),
+            std::chrono::milliseconds(20),
             std::bind(&MdControllerNode::timerCallback, this)
         );
     }
@@ -63,8 +63,6 @@ private:
         ReceiveDataFromController(Motor.InitMotor);
 
         if (fgInitsetting == ON) {
-            if (++byCntControl >= 1) {  
-                byCntControl = 0;
 
                 if (SendCmdRpm) {
                     IByte left = Short2Byte(Motor.left_rpm);
@@ -83,7 +81,7 @@ private:
                 // 상태 요청
                 int nArray[4] = {PID_MAIN_DATA, 0, 0, 0};
                 PutMdData(PID_REQ_PID_DATA, Com.nIDMDT, Motor.ID, nArray);
-            }
+            
 
         } else {
             if (byCntStartDelay <= 200) {
