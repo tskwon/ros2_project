@@ -42,6 +42,7 @@ public:
         integral_ = 0.0;
         is_stopped_ = true;
         is_run_ = true;
+        ir_detected_ = false;
         speed_ramp_rate_ = 2.0;
 
         RCLCPP_INFO(this->get_logger(), "Line Tracing Node started (PID dynamic: ON)");
@@ -54,14 +55,11 @@ public:
         result.reason = "PID parameters updated";
 
         for (const auto& param : params) {
-            if (param.get_name() == "Kp") {
-                Kp_ = param.as_double();
-            } else if (param.get_name() == "Ki") {
-                Ki_ = param.as_double();
-            } else if (param.get_name() == "Kd") {
-                Kd_ = param.as_double();
-            }
+            if (param.get_name() == "Kp") Kp_ = param.as_double();
+            else if (param.get_name() == "Ki") Ki_ = param.as_double();
+            else if (param.get_name() == "Kd") Kd_ = param.as_double();
         }
+
         RCLCPP_INFO(this->get_logger(), "Updated PID params: Kp=%.2f, Ki=%.2f, Kd=%.2f", Kp_, Ki_, Kd_);
         return result;
     }
@@ -74,21 +72,15 @@ public:
         auto rpm_msg = std_msgs::msg::Int32MultiArray();
         rpm_msg.data = {0, 0};
         rpm_pub_->publish(rpm_msg);
-        RCLCPP_INFO(this->get_logger(), "Motors stopped before shutdown");
+        RCLCPP_INFO(this->get_logger(), "Motors stopped");
     }
 
 private:
     void sensor_callback(const std_msgs::msg::Int32MultiArray::SharedPtr msg) {
         auto sensor_values = msg->data;
-
-        if (sensor_values.size() != 5) {
-            RCLCPP_WARN(this->get_logger(), "Invalid sensor data size: %zu", sensor_values.size());
-            return;
-        }
+        if (sensor_values.size() != 5) return;
 
         double position = 0.0;
-
-        
         int active_sensors = 0;
         for (int i = 0; i < 5; ++i) {
             if (sensor_values[i] == 1) {
@@ -97,10 +89,26 @@ private:
             }
         }
 
-        if (active_sensors > 0) {
+        // 상승 엣지: 처음 5개 감지 시에만 정지
+        if (!ir_detected_ && active_sensors == 5) {
+            ir_detected_ = true;
+            is_run_ = false;
+            is_stopped_ = true;
+            stop_motors();
+            RCLCPP_WARN(this->get_logger(), "상승엣지 감지 → 정지!");
+            return;
+        }
+
+        // 리셋 조건: 다시 5개 미만이 되면 플래그 리셋
+        if (active_sensors < 5 && ir_detected_) {
+            ir_detected_ = false;
+            RCLCPP_INFO(this->get_logger(), "IR 상승엣지 리셋 완료 (라인 벗어남)");
+        }
+
+        if (!ir_detected_ && active_sensors > 0) {
             is_run_ = true;
             error_ = position;
-        } else {
+        } else if (!ir_detected_ && active_sensors == 0) {
             is_run_ = false;
             is_stopped_ = true;
             stop_motors();
@@ -119,12 +127,8 @@ private:
         double derivative = error_ - prev_error_;
         double correction = Kp_ * error_ + Ki_ * integral_ + Kd_ * derivative;
 
-        left_rpm_ = current_speed_ + correction;
-        right_rpm_ = current_speed_ - correction;
-
-        left_rpm_ = std::clamp(left_rpm_, -70.0, 70.0);
-        right_rpm_ = std::clamp(right_rpm_, -70.0, 70.0);
-
+        left_rpm_ = std::clamp(current_speed_ + correction, -70.0, 70.0);
+        right_rpm_ = std::clamp(current_speed_ - correction, -70.0, 70.0);
         prev_error_ = error_;
 
         if (!is_run_) return;
@@ -133,13 +137,14 @@ private:
         rpm_msg.data = {static_cast<int32_t>(left_rpm_), -static_cast<int32_t>(right_rpm_)};
         rpm_pub_->publish(rpm_msg);
 
+        // 로그
         std::string sensor_str = "[";
         for (size_t i = 0; i < sensor_values.size(); ++i) {
             sensor_str += std::to_string(sensor_values[i]);
             if (i < sensor_values.size() - 1) sensor_str += ", ";
         }
         sensor_str += "]";
-        RCLCPP_INFO(this->get_logger(), "IR Sensor: %s, Error: %.2f, Speed: %.1f, Left RPM: %.1f, Right RPM: %.1f",
+        RCLCPP_INFO(this->get_logger(), "IR: %s | Error: %.2f | Speed: %.1f | L: %.1f | R: %.1f",
                     sensor_str.c_str(), error_, current_speed_, left_rpm_, right_rpm_);
     }
 
@@ -147,7 +152,7 @@ private:
         is_run_ = !msg->data;
         is_stopped_ = true;
         stop_motors();
-        RCLCPP_INFO(this->get_logger(), "Received stop signal, motors stopped");
+        RCLCPP_INFO(this->get_logger(), "Received stop signal");
     }
 
     rclcpp::Publisher<std_msgs::msg::Int32MultiArray>::SharedPtr rpm_pub_;
@@ -165,6 +170,7 @@ private:
     double Kp_, Ki_, Kd_;
     bool is_stopped_;
     bool is_run_;
+    bool ir_detected_;
     double speed_ramp_rate_;
 };
 

@@ -51,7 +51,7 @@ public:
 
 private:
     void cmdRpmCallback(const std_msgs::msg::Int32MultiArray::SharedPtr msg) {
-        if(Motor.left_rpm != msg->data[0] || Motor.right_rpm = msg->data[1])
+        if(Motor.left_rpm != msg->data[0] || Motor.right_rpm != msg->data[1])
         {
             Motor.left_rpm = msg->data[0];
             Motor.right_rpm = msg->data[1];
