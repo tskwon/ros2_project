@@ -33,7 +33,7 @@ public:
             std::bind(&LineTracingNode::param_callback, this, std::placeholders::_1)
         );
 
-        base_speed_ = 20.0;
+        base_speed_ = 30.0;
         current_speed_ = 0.0;
         left_rpm_ = 0.0;
         right_rpm_ = 0.0;
@@ -122,8 +122,8 @@ private:
         left_rpm_ = current_speed_ + correction;
         right_rpm_ = current_speed_ - correction;
 
-        left_rpm_ = std::clamp(left_rpm_, 0.0, 50.0);
-        right_rpm_ = std::clamp(right_rpm_, 0.0, 50.0);
+        left_rpm_ = std::clamp(left_rpm_, -70.0, 70.0);
+        right_rpm_ = std::clamp(right_rpm_, -70.0, 70.0);
 
         prev_error_ = error_;
 

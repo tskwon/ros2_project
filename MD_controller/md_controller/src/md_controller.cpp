@@ -44,16 +44,19 @@ public:
         InitSerial(); // 통신 초기화
 
         timer_ = this->create_wall_timer(
-            std::chrono::milliseconds(20),
+            std::chrono::milliseconds(10),
             std::bind(&MdControllerNode::timerCallback, this)
         );
     }
 
 private:
     void cmdRpmCallback(const std_msgs::msg::Int32MultiArray::SharedPtr msg) {
-        Motor.left_rpm = msg->data[0];
-        Motor.right_rpm = msg->data[1];
-        SendCmdRpm = ON;
+        if(Motor.left_rpm != msg->data[0] || Motor.right_rpm = msg->data[1])
+        {
+            Motor.left_rpm = msg->data[0];
+            Motor.right_rpm = msg->data[1];
+            SendCmdRpm = ON;
+        }
     }
 
     void timerCallback() {
