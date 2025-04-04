@@ -2,21 +2,29 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>robot_controller</name>
-  <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <version>0.0.1</version>
+  <description>ROS 2 robot controller that receives task instructions via MQTT and controls line tracing and lift mechanisms.</description>
+  
   <maintainer email="james190414@gmail.com">xotn</maintainer>
-  <license>TODO: License declaration</license>
+  <license>Apache License 2.0</license>
 
+  <!-- Build system -->
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <!-- Package dependencies -->
   <depend>rclcpp</depend>
   <depend>std_msgs</depend>
   <depend>geometry_msgs</depend>
+  <depend>nlohmann_json</depend>
+  <exec_depend>mqtt_client</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
+    <launch>
+      share/robot_controller/launch
+    </launch>
   </export>
 </package>
