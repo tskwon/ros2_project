@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'astra_opencv'
+package_name = 'ggcnn_grasp_detector'
 
 setup(
     name=package_name,
@@ -20,8 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'astra_opencv = astra_opencv.astra_opencv:main',
-            '3d_position = astra_opencv.3d_position:main'
+            'ggcnn_node = ggcnn_grasp_detector.ggcnn_node:main'
         ],
     },
 )

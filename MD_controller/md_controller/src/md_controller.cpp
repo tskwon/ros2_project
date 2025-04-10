@@ -11,7 +11,7 @@ public:
         // 파라미터 선언 및 할당
         this->declare_parameter("MDUI", 184);
         this->declare_parameter("MDT", 183);
-        this->declare_parameter("Port", "/dev/ttyUSB1");
+        this->declare_parameter("Port", "/dev/ttyUSB0");
         this->declare_parameter("Baudrate", 19200);
         this->declare_parameter("ID", 1);
         this->declare_parameter("GearRatio", 30);

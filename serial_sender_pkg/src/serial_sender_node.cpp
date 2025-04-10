@@ -6,7 +6,7 @@ class SerialSenderNode : public rclcpp::Node {
 public:
     SerialSenderNode() : Node("serial_sender_node") {
     try {
-        serial_.setPort("/dev/ttyACM0");
+        serial_.setPort("/dev/ttyUSB0");  // 🔧 수정
         serial_.setBaudrate(9600);
         serial::Timeout timeout = serial::Timeout::simpleTimeout(1000);  // 🔧 수정
         serial_.setTimeout(timeout);  // ✅ 에러 해결
