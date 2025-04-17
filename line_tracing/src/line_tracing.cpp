@@ -17,14 +17,19 @@ public:
         target_position_sub_ = create_subscription<std_msgs::msg::Int32>(
             "/target_position", qos, std::bind(&LineTracingNode::target_callback, this, std::placeholders::_1));
 
-        declare_parameter<double>("Kp", 1.2);
+        declare_parameter<double>("Kp", 2);
         declare_parameter<double>("Ki", 0.0);
-        declare_parameter<double>("Kd", 2.65);
+        declare_parameter<double>("Kd", 0.0);
         get_parameter("Kp", Kp_);
         get_parameter("Ki", Ki_);
         get_parameter("Kd", Kd_);
+        
+        rclcpp::on_shutdown([this]() {
+            RCLCPP_WARN(this->get_logger(), "Shutdown detected. Stopping motors.");
+            this->stop_motors();
+        });
 
-        base_speed_ = 30.0;
+        base_speed_ = 16.0;
         current_speed_ = 0.0;
         error_ = prev_error_ = integral_ = 0.0;
         is_running_ = false;
@@ -65,19 +70,29 @@ private:
 
         double position = 0.0;
         int active_sensors = 0;
+        int zero_sensors = 0;
         for (int i = 0; i < 5; ++i) {
             if (msg->data[i] == 1) {
                 position += sensor_weight_[i];
                 active_sensors++;
             }
-        }
+            else if (msg->data[i] == 0) {
+                zero_sensors++;
+            }
+        };
 
+        if (zero_sensors == 5) {
+            RCLCPP_WARN(get_logger(), "All sensors are zero. Stopping motors.");
+            stop_motors();
+            return;
+        }
         if (active_sensors == 5 && prev_active_sensors_ < 5 && !edge_detect_ && is_running_) {
             edge_detect_ = true;
             rising_edge_count_++;
             RCLCPP_INFO(get_logger(), "Rising edge #%d detected", rising_edge_count_);
 
             if (rising_edge_count_ == target_position_) {
+                RCLCPP_INFO(get_logger(), "Target position reached. Stopping motors.");
                 stop_motors();
                 prev_active_sensors_ = active_sensors;
                 return;
@@ -93,7 +108,11 @@ private:
         if (!is_running_) return;
 
         error_ = position;
+        
+        
         integral_ += error_;
+        integral_ = std::clamp(integral_, -30.0, 30.0);
+
         double derivative = error_ - prev_error_;
         double correction = Kp_ * error_ + Ki_ * integral_ + Kd_ * derivative;
 
@@ -102,8 +121,8 @@ private:
             if (current_speed_ > base_speed_) current_speed_ = base_speed_;
         }
 
-        double left_rpm = std::clamp(current_speed_ + correction, -70.0, 70.0);
-        double right_rpm = std::clamp(current_speed_ - correction, -70.0, 70.0);
+        double left_rpm = std::clamp(current_speed_ + correction, -100.0, 100.0);
+        double right_rpm = std::clamp(current_speed_ - correction, -100.0, 100.0);
         prev_error_ = error_;
 
         std_msgs::msg::Int32MultiArray rpm_msg;
@@ -116,7 +135,7 @@ private:
     rclcpp::Subscription<std_msgs::msg::Int32MultiArray>::SharedPtr sensor_sub_;
     rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr target_position_sub_;
 
-    double sensor_weight_[5] = {-2.5, -1.5, 0, 1.5, 2.5};
+    double sensor_weight_[5] = {-2.0, -1.0, 0, 1.0, 2.0};
     double base_speed_, current_speed_, error_, prev_error_, integral_;
     double Kp_, Ki_, Kd_, speed_ramp_rate_;
     bool is_running_, edge_detect_;

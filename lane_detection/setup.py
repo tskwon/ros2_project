@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'ggcnn_grasp_detector'
+package_name = 'lane_detection'
 
 setup(
     name=package_name,
@@ -20,7 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'ggcnn_node = ggcnn_grasp_detector.ggcnn_node:main'
+            'lane_detection_node = lane_detection.lane_detection_node:main',
         ],
     },
 )

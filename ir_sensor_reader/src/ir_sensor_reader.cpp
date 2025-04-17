@@ -8,12 +8,12 @@ public:
         // Publisher 설정 (5개 센서 값을 배열로 퍼블리시)
         ir_publisher_ = this->create_publisher<std_msgs::msg::Int32MultiArray>("/ir_sensor_data", 10);
         
-        // 타이머 설정 (100ms마다 센서 값 읽기)
-        timer_ = this->create_wall_timer(std::chrono::milliseconds(50), 
+        // 타이머 설정 (20ms마다 센서 값 읽기)
+        timer_ = this->create_wall_timer(std::chrono::milliseconds(23), 
                                          std::bind(&IRSensorReader::publish_sensor_data, this));
 
         // GPIO 핀 번호 설정
-        ir_pins_ = {17,18,27,22,23};  // Raspberry Pi 기준 GPIO 핀 번호
+        ir_pins_ = {17,18,27,23,24};  // Raspberry Pi 기준 GPIO 핀 번호
         // ir_pins_ = {23,22,27,18,17};  // Raspberry Pi 기준 GPIO 핀 번호
             
         // GPIO 초기화
