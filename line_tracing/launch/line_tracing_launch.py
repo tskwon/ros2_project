@@ -40,7 +40,7 @@ def generate_launch_description():
 
     # 런치 설명 생성
     return LaunchDescription([
-        md_teleop_node,
+        # md_teleop_node,
         md_controller_node,
         ir_sensor_node,
         line_tracing_node

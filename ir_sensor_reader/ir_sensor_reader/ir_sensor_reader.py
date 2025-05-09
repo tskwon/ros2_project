@@ -42,7 +42,7 @@ class IRSensorReader(Node):
             self.lines = []
         
         # 타이머 설정 (15ms마다 센서 값 읽기)
-        self.timer = self.create_timer(0.011, self.publish_sensor_data)
+        self.timer = self.create_timer(0.009, self.publish_sensor_data)
         
         self.get_logger().info(f'IR Sensor Reader Node Started with {len(self.lines)} pins configured')
     
