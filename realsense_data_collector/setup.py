@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'realsense_opencv_viewer'
+package_name = 'realsense_data_collector'
 
 setup(
     name=package_name,
@@ -20,8 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-        'image_viewer = realsense_opencv_viewer.image_viewer:main',
-
+            'rgb_display_node_py = realsense_data_collector.rgb_display_node:main',
         ],
     },
 )

@@ -11,7 +11,10 @@ public:
     LineTracingNode() : Node("line_tracing_node") {
         auto cmd_vel_qos = rclcpp::QoS(2).reliable();
         auto signal_qos = rclcpp::QoS(1).reliable();
-        auto sensor_qos = rclcpp::QoS(10).reliable();
+        auto sensor_qos = rclcpp::QoS(1)
+        .keep_last(1)        // 최신 메시지만 보관 정책
+        .reliable()         // 신뢰성 있는 통신
+        .durability_volatile();
 
         arrived_pub_ = create_publisher<std_msgs::msg::Bool>("/line_arrived", signal_qos);
 
@@ -27,9 +30,9 @@ public:
         declare_parameter("wheel_separation", 0.503);
         declare_parameter("reverse_direction", true);
         declare_parameter("max_rpm", 200);
-        declare_parameter<double>("Kp", 1.00);
-        declare_parameter<double>("Ki", 0.003);
-        declare_parameter<double>("Kd", 0.5);
+        declare_parameter<double>("Kp", 0.98);
+        declare_parameter<double>("Ki", 0.001);
+        declare_parameter<double>("Kd", 0.55);
         declare_parameter<double>("max_linear_speed", 0.25);
         declare_parameter<double>("min_linear_speed", 0.15);
         declare_parameter<double>("normal_linear_speed", 0.27);
@@ -68,11 +71,11 @@ public:
         max_theoretical_linear_speed_ = wheel_radius_ * max_rpm_ * 2 * M_PI / 60.0;
         max_theoretical_angular_speed_ = max_theoretical_linear_speed_ * 2 / wheel_separation_;
 
-        sensor_weight_[0] = -0.52;
+        sensor_weight_[0] = -0.55;
         sensor_weight_[1] = -0.18;
         sensor_weight_[2] = 0.0;
         sensor_weight_[3] = 0.18;
-        sensor_weight_[4] = 0.52;
+        sensor_weight_[4] = 0.55;
     }
 
 private:
@@ -182,7 +185,7 @@ private:
         prev_angular_velocity_ = angular_velocity;
 
         double error_magnitude = std::abs(error_);
-        double target_linear_speed = (error_magnitude > curve_threshold_) ? 0.18 : 0.23;
+        double target_linear_speed = (error_magnitude > curve_threshold_) ? 0.23 : 0.18;
 
         if (error_magnitude > curve_threshold_) {
             double angular_magnitude = std::abs(angular_velocity);

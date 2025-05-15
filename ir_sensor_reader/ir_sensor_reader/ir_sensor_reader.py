@@ -3,18 +3,29 @@ from rclpy.node import Node
 from std_msgs.msg import Int32MultiArray
 import gpiod
 import time
+# QoS 관련 임포트 추가
+from rclpy.qos import QoSProfile, QoSHistoryPolicy, QoSReliabilityPolicy, QoSDurabilityPolicy
 
 class IRSensorReader(Node):
     def __init__(self):
         super().__init__('ir_sensor_reader_node')
         
-        # Publisher 설정
+        # QoS 프로필 생성 - 최신 데이터만 유지하도록 설정
+        qos_profile = QoSProfile(
+            history=QoSHistoryPolicy.KEEP_LAST,  # 최신 메시지만 유지
+            depth=1,  # 큐 크기를 1로 설정
+            reliability=QoSReliabilityPolicy.RELIABLE,  # 신뢰성 있는 전송
+            durability=QoSDurabilityPolicy.VOLATILE  # 연결 전 데이터는 불필요
+        )
+        
+        # Publisher 설정 - QoS 프로필 적용
         self.ir_publisher = self.create_publisher(
             Int32MultiArray,
             '/ir_sensor_data',
-            10
+            qos_profile  # 숫자 1 대신 QoS 프로필 사용
         )
         
+        # 나머지 코드는 동일
         # GPIO 핀 번호 설정 (BCM 번호 그대로 사용)
         self.ir_pins = [17, 18, 27, 22, 23]
         
@@ -41,11 +52,12 @@ class IRSensorReader(Node):
             self.get_logger().error(f"Error initializing GPIO: {str(e)}")
             self.lines = []
         
-        # 타이머 설정 (15ms마다 센서 값 읽기)
+        # 타이머 설정 (9ms마다 센서 값 읽기)
         self.timer = self.create_timer(0.009, self.publish_sensor_data)
         
         self.get_logger().info(f'IR Sensor Reader Node Started with {len(self.lines)} pins configured')
     
+    # 나머지 메서드는 동일
     def publish_sensor_data(self):
         msg = Int32MultiArray()
         
