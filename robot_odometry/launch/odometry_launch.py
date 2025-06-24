@@ -36,7 +36,13 @@ def generate_launch_description():
             output='screen',
             # IMU 드라이버에 필요한 파라미터가 있다면 여기에 추가
         ),
-
+            # md_controller 노드 (기존 패키지에서 가져왔다고 가정)
+        Node(
+            package='md_controller',  
+            executable='md_controller',  
+            name='md_controller_node',
+            output='screen'
+        ),
         # 3. robot_localization 패키지의 EKF 노드 실행 (센서 퓨전 담당)
         Node(
             package=pkg_robot_localization, # 'robot_localization' 패키지
