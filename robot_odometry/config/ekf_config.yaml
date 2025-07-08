@@ -1,0 +1,42 @@
+ekf_node:
+    ros__parameters:
+        frequency: 20.0                    # 30.0 → 20.0으로 낮춤 (안정성)
+        sensor_timeout: 0.5               # 네트워크 지연 대응
+        two_d_mode: true
+        publish_acceleration: false
+        publish_tf: true
+        
+        # Transform 설정
+        transform_time_offset: 0.1        # 네트워크 지연 보상
+        transform_timeout: 0.2            # Transform 타임아웃
+        
+        # 프레임 설정
+        map_frame: map
+        odom_frame: odom
+        base_link_frame: base_link
+        world_frame: odom
+        
+        # 엔코더 오도메트리 설정 (위치와 속도만)
+        odom0: /odom/robot
+        odom0_config: [true,  true,  false,    # x, y 위치 사용
+                       false, false, false,    # roll, pitch, yaw 제외
+                       true,  true,  false,    # vx, vy 속도 사용
+                       false, false, false,    # wx, wy, wz 각속도 제외
+                       false, false, false]    # ax, ay, az 가속도 제외
+        odom0_differential: false
+        odom0_relative: false
+        odom0_queue_size: 10
+        odom0_nodelay: true               # 지연 없이 처리
+        
+        # IMU 설정 (자세 정보만)
+        imu0: /imu/data
+        imu0_config: [false, false, false,    # x, y, z 위치 제외
+                      false, false, true,     # roll, pitch 제외, yaw만 사용
+                      false, false, false,    # vx, vy, vz 속도 제외
+                      false, false, true,     # wx, wy 제외, wz(yaw 각속도) 사용
+                      false, false, false]    # ax, ay, az 가속도 제외
+        imu0_differential: false
+        imu0_relative: false
+        imu0_queue_size: 10
+        imu0_nodelay: true
+        imu0_remove_gravitational_acceleration: true  # 중력 가속도 제거

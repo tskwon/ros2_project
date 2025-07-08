@@ -1,0 +1,168 @@
+<?xml version="1.0"?>
+<robot name="differential_robot" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- 색상 정의 -->
+  <material name="blue"><color rgba="0.0 0.0 0.8 1.0"/></material>
+  <material name="black"><color rgba="0.0 0.0 0.0 1.0"/></material>
+  <material name="white"><color rgba="1.0 1.0 1.0 1.0"/></material>
+  <material name="green"><color rgba="0.0 0.8 0.0 1.0"/></material>
+  <material name="red"><color rgba="0.8 0.0 0.0 1.0"/></material>
+
+  <!-- Base -->
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0.05" rpy="0 0 0"/>
+      <geometry><box size="0.3 0.25 0.1"/></geometry>
+      <material name="blue"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.05" rpy="0 0 0"/>
+      <geometry><box size="0.3 0.25 0.1"/></geometry>
+    </collision>
+    <inertial>
+      <mass value="5.0"/>
+      <origin xyz="0 0 0.05"/>
+      <inertia ixx="0.083" ixy="0.0" ixz="0.0" iyy="0.083" iyz="0.0" izz="0.083"/>
+    </inertial>
+  </link>
+
+  <!-- 왼쪽 바퀴 (전방 좌측) -->
+  <link name="left_wheel_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry><cylinder radius="0.065" length="0.04"/></geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry><cylinder radius="0.065" length="0.04"/></geometry>
+    </collision>
+    <inertial>
+      <mass value="0.5"/>
+      <origin xyz="0 0 0"/>
+      <inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001"/>
+    </inertial>
+  </link>
+
+  <joint name="left_wheel_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="left_wheel_link"/>
+    <origin xyz="0.1 0.13 0.0" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <!-- 오른쪽 바퀴 (전방 우측) -->
+  <link name="right_wheel_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry><cylinder radius="0.065" length="0.04"/></geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry><cylinder radius="0.065" length="0.04"/></geometry>
+    </collision>
+    <inertial>
+      <mass value="0.5"/>
+      <origin xyz="0 0 0"/>
+      <inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001"/>
+    </inertial>
+  </link>
+
+  <joint name="right_wheel_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="right_wheel_link"/>
+    <origin xyz="0.1 -0.13 -0.01" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+<!-- ========== 왼쪽 캐스터 지지대 ========== -->
+<link name="rear_left_caster_holder_link">
+  <visual>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <geometry><box size="0.04 0.04 0.01"/></geometry>
+    <material name="white"/>
+  </visual>
+</link>
+
+<joint name="rear_left_caster_holder_joint" type="fixed">
+  <parent link="base_link"/>
+  <child link="rear_left_caster_holder_link"/>
+  <origin xyz="-0.13 0.10 -0.005" rpy="0 0 0"/> <!-- 후방 왼쪽 아래 -->
+</joint>
+
+<!-- ========== 왼쪽 캐스터 바퀴 ========== -->
+<link name="rear_left_caster_link">
+  <visual>
+    <origin xyz="0 0 -0.025" rpy="0 0 0"/>
+    <geometry><sphere radius="0.02"/></geometry>
+    <material name="white"/>
+  </visual>
+</link>
+
+<joint name="rear_left_caster_joint" type="fixed">
+  <parent link="rear_left_caster_holder_link"/>
+  <child link="rear_left_caster_link"/>
+  <origin xyz="0 0 0" rpy="0 0 0"/>
+</joint>
+<!-- ========== 오른쪽 캐스터 지지대 ========== -->
+<link name="rear_right_caster_holder_link">
+  <visual>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <geometry><box size="0.04 0.04 0.01"/></geometry>
+    <material name="white"/>
+  </visual>
+</link>
+
+<joint name="rear_right_caster_holder_joint" type="fixed">
+  <parent link="base_link"/>
+  <child link="rear_right_caster_holder_link"/>
+  <origin xyz="-0.13 -0.10 -0.005" rpy="0 0 0"/> <!-- ← 왼쪽과 z 높이 맞춤 -->
+</joint>
+
+<!-- ========== 오른쪽 캐스터 바퀴 ========== -->
+<link name="rear_right_caster_link">
+  <visual>
+    <origin xyz="0 0 -0.025" rpy="0 0 0"/>
+    <geometry><sphere radius="0.02"/></geometry>
+    <material name="white"/>
+  </visual>
+</link>
+
+<joint name="rear_right_caster_joint" type="fixed">
+  <parent link="rear_right_caster_holder_link"/>
+  <child link="rear_right_caster_link"/>
+  <origin xyz="0 0 0" rpy="0 0 0"/>
+</joint>
+
+
+  <!-- IMU -->
+  <link name="imu_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="0.03 0.03 0.01"/></geometry>
+      <material name="green"/>
+    </visual>
+  </link>
+
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <origin xyz="0.0 0.0 0.08" rpy="0 0 0"/>
+  </joint>
+
+  <!-- 카메라 -->
+  <link name="camera_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="0.025 0.09 0.025"/></geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+
+  <joint name="camera_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="camera_link"/>
+    <origin xyz="0.15 0.0 0.113" rpy="0 0.25 0"/> <!-- 전방 상단, 살짝 아래로 기울임 -->
+  </joint>
+
+</robot>
