@@ -60,6 +60,22 @@ def generate_launch_description():
             }]
         ),
 
+        # ========== 바퀴 조인트 퍼블리셔 (수정된 파라미터) ==========
+        Node(
+            package='robot_odometry',
+            executable='wheel_joint_publisher',
+            name='wheel_joint_publisher',
+            output='screen',
+            parameters=[{
+                'wheel_radius': 0.103,      # URDF와 일치
+                'wheel_base': 0.503,        # URDF와 일치
+                'left_wheel_joint': 'left_wheel_joint',
+                'right_wheel_joint': 'right_wheel_joint',
+                'publish_rate': 30.0,
+                'use_sim_time': use_sim_time
+            }]
+        ),
+
         # ========== RealSense D435i 카메라 ==========
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource([
@@ -80,28 +96,44 @@ def generate_launch_description():
             }.items()
         ),
 
-        # ========== TF Static Publishers (필요한 것만) ==========
-        # RealSense 카메라 프레임 연결 (카메라 드라이버가 발행하지 않는 경우에만)
-        # camera_link (URDF) -> camera_color_optical_frame (RealSense)
+        # ========== TF Static Publishers ==========
+        # 카메라 광학 프레임 변환 (RealSense 표준)
         Node(
             package='tf2_ros',
             executable='static_transform_publisher',
             name='camera_to_optical_tf',
-            # RealSense 광학 프레임 변환 (카메라 좌표계 -> 광학 좌표계)
-            # 90도 회전: X축이 오른쪽, Y축이 아래쪽, Z축이 앞쪽을 향하도록
             arguments=['0.0', '0.0', '0.0', '-1.5708', '0.0', '-1.5708', 
                       'camera_link', 'camera_color_optical_frame'],
             output='screen'
         ),
 
-        # ArUco 마커 맵 프레임 (글로벌 좌표계)
+        # map -> odom 변환 (로컬라이제이션이 제공하지 않는 경우를 위해)
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='map_to_odom_tf',
+            arguments=['0.0', '0.0', '0.0', '0.0', '0.0', '0.0', 
+                      'map', 'odom'],
+            output='screen'
+        ),
+
+        # map -> aruco_map 변환 (ArUco 맵과 일반 맵 연결)
         Node(
             package='tf2_ros',
             executable='static_transform_publisher',
             name='map_to_aruco_map_tf',
-            # map과 aruco_map을 동일하게 설정 (필요시 조정)
             arguments=['0.0', '0.0', '0.0', '0.0', '0.0', '0.0', 
                       'map', 'aruco_map'],
+            output='screen'
+        ),
+
+        # camera_depth_frame -> camera_color_optical_frame 변환 (ArUco 검출용)
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='depth_to_color_optical_tf',
+            arguments=['0.0', '0.0', '0.0', '0.0', '0.0', '0.0', 
+                      'camera_depth_optical_frame', 'camera_color_optical_frame'],
             output='screen'
         ),
 
@@ -111,7 +143,10 @@ def generate_launch_description():
             executable='aruco_detector',
             name='aruco_detector',
             parameters=[{
-                'use_sim_time': use_sim_time
+                'use_sim_time': use_sim_time,
+                'camera_frame': 'camera_color_optical_frame',  # 카메라 프레임 명시
+                'marker_size': 0.1,  # 마커 크기 (미터 단위)
+                'aruco_dictionary_id': 'DICT_6X6_250'  # ArUco 딕셔너리 타입
             }],
             output='screen'
         ),
@@ -121,7 +156,9 @@ def generate_launch_description():
             executable='stable_aruco_detection_node',
             name='stable_aruco_detection_node',
             parameters=[{
-                'use_sim_time': use_sim_time
+                'use_sim_time': use_sim_time,
+                'stability_threshold': 5,  # 안정적 검출을 위한 임계값
+                'detection_timeout': 2.0   # 검출 타임아웃 (초)
             }],
             output='screen'
         ),
@@ -141,7 +178,7 @@ def generate_launch_description():
             ]
         ),
 
-        # MyAHRS+ IMU
+        # MyAHRS+ IMU (실제 하드웨어용)
         Node(
             package=pkg_myahrs_driver,
             executable='myahrs_ros2_driver',
@@ -151,7 +188,7 @@ def generate_launch_description():
                 config_file,
                 {
                     'imu_frame_id': 'imu_link',
-                    'publish_rate': 30.0,
+                    'publish_rate': 100.0,        # IMU는 높은 주파수로 설정
                     'use_sim_time': use_sim_time
                 }
             ]
@@ -165,6 +202,8 @@ def generate_launch_description():
             parameters=[{
                 'odom_frame_id': 'odom',
                 'base_frame_id': 'base_link',
+                'wheel_radius': 0.103,
+                'wheel_base': 0.503,
                 'use_sim_time': use_sim_time,
             }]
         ),

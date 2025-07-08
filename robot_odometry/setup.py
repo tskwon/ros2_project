@@ -53,6 +53,7 @@ setup(
             'odometry_reader = robot_odometry.odometry_reader:main',
             'test_navigation = robot_odometry.test_navigation_controller:main',
             'square_navigation = robot_odometry.square_navigation_controller:main',
+            'wheel_joint_publisher = robot_odometry.wheel_joint_publisher:main',
         ],
     },
 )

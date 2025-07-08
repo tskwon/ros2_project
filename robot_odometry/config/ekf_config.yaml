@@ -1,42 +1,89 @@
 ekf_node:
-    ros__parameters:
-        frequency: 20.0                    # 30.0 → 20.0으로 낮춤 (안정성)
-        sensor_timeout: 0.5               # 네트워크 지연 대응
-        two_d_mode: true
-        publish_acceleration: false
-        publish_tf: true
-        
-        # Transform 설정
-        transform_time_offset: 0.1        # 네트워크 지연 보상
-        transform_timeout: 0.2            # Transform 타임아웃
-        
-        # 프레임 설정
-        map_frame: map
-        odom_frame: odom
-        base_link_frame: base_link
-        world_frame: odom
-        
-        # 엔코더 오도메트리 설정 (위치와 속도만)
-        odom0: /odom/robot
-        odom0_config: [true,  true,  false,    # x, y 위치 사용
-                       false, false, false,    # roll, pitch, yaw 제외
-                       true,  true,  false,    # vx, vy 속도 사용
-                       false, false, false,    # wx, wy, wz 각속도 제외
-                       false, false, false]    # ax, ay, az 가속도 제외
-        odom0_differential: false
-        odom0_relative: false
-        odom0_queue_size: 10
-        odom0_nodelay: true               # 지연 없이 처리
-        
-        # IMU 설정 (자세 정보만)
-        imu0: /imu/data
-        imu0_config: [false, false, false,    # x, y, z 위치 제외
-                      false, false, true,     # roll, pitch 제외, yaw만 사용
-                      false, false, false,    # vx, vy, vz 속도 제외
-                      false, false, true,     # wx, wy 제외, wz(yaw 각속도) 사용
-                      false, false, false]    # ax, ay, az 가속도 제외
-        imu0_differential: false
-        imu0_relative: false
-        imu0_queue_size: 10
-        imu0_nodelay: true
-        imu0_remove_gravitational_acceleration: true  # 중력 가속도 제거
+  ros__parameters:
+    # 기본 설정
+    frequency: 30.0
+    sensor_timeout: 0.1
+    two_d_mode: true        # 2D 모드 활성화 (지상 로봇)
+    
+    # 맵 프레임 설정
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_link
+    world_frame: odom
+    
+    # 상태 벡터 설정 (x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az)
+    # 차동구동 로봇은 x, y, yaw만 주요함
+    
+    # 오도메트리 설정 (엔코더 기반)
+    odom0: /odom/robot
+    odom0_config: [true,  true,  false,    # x, y, z
+                   false, false, true,     # roll, pitch, yaw
+                   true,  true,  false,    # vx, vy, vz
+                   false, false, true,     # vroll, vpitch, vyaw
+                   false, false, false]    # ax, ay, az
+    
+    # 엔코더 오도메트리 공분산 (신뢰도 높음)
+    odom0_differential: false
+    odom0_relative: false
+    odom0_pose_rejection_threshold: 5.0
+    odom0_twist_rejection_threshold: 1.0
+    
+    # IMU 설정
+    imu0: /imu/data
+    imu0_config: [false, false, false,     # x, y, z (위치는 사용하지 않음)
+                  false, false, true,      # roll, pitch, yaw (yaw만 사용)
+                  false, false, false,     # vx, vy, vz
+                  false, false, true,      # vroll, vpitch, vyaw (yaw 각속도만)
+                  true,  true,  false]     # ax, ay, az (선가속도 사용)
+    
+    imu0_differential: false
+    imu0_relative: false
+    imu0_pose_rejection_threshold: 0.8
+    imu0_twist_rejection_threshold: 0.8
+    imu0_linear_acceleration_rejection_threshold: 0.8
+    
+    # 노이즈 공분산 설정 (중요!)
+    # 프로세스 노이즈 (시스템 모델 불확실성)
+    process_noise_covariance: [0.05, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                               0.0,  0.05,   0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                               0.0,  0.0,    0.06,   0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                               0.0,  0.0,    0.0,    0.03,   0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                               0.0,  0.0,    0.0,    0.0,    0.03,   0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                               0.0,  0.0,    0.0,    0.0,    0.0,    0.06,   0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                               0.0,  0.0,    0.0,    0.0,    0.0,    0.0,    0.025,   0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                               0.0,  0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.025,   0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                               0.0,  0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.04,   0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                               0.0,  0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.01,   0.0,    0.0,    0.0,    0.0,    0.0,
+                               0.0,  0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.01,   0.0,    0.0,    0.0,    0.0,
+                               0.0,  0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.02,   0.0,    0.0,    0.0,
+                               0.0,  0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.01,   0.0,    0.0,
+                               0.0,  0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.01,   0.0,
+                               0.0,  0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.015]
+    
+    # 초기 상태 공분산 (시작 시 불확실성)
+    initial_estimate_covariance: [1e-9, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,     0.0,    0.0,    0.0,
+                                  0.0,  1e-9,   0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,     0.0,    0.0,    0.0,
+                                  0.0,  0.0,    1e-9,   0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,     0.0,    0.0,    0.0,
+                                  0.0,  0.0,    0.0,    1e-9,   0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,     0.0,    0.0,    0.0,
+                                  0.0,  0.0,    0.0,    0.0,    1e-9,   0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,     0.0,    0.0,    0.0,
+                                  0.0,  0.0,    0.0,    0.0,    0.0,    1e-9,   0.0,    0.0,    0.0,    0.0,     0.0,     0.0,     0.0,    0.0,    0.0,
+                                  0.0,  0.0,    0.0,    0.0,    0.0,    0.0,    1e-9,   0.0,    0.0,    0.0,     0.0,     0.0,     0.0,    0.0,    0.0,
+                                  0.0,  0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    1e-9,   0.0,    0.0,     0.0,     0.0,     0.0,    0.0,    0.0,
+                                  0.0,  0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    1e-9,   0.0,     0.0,     0.0,     0.0,    0.0,    0.0,
+                                  0.0,  0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    1e-9,    0.0,     0.0,     0.0,    0.0,    0.0,
+                                  0.0,  0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     1e-9,    0.0,     0.0,    0.0,    0.0,
+                                  0.0,  0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     1e-9,    0.0,    0.0,    0.0,
+                                  0.0,  0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,     1e-9,   0.0,    0.0,
+                                  0.0,  0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,     0.0,    1e-9,   0.0,
+                                  0.0,  0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,     0.0,    0.0,    1e-9]
+    
+    # 디버깅 설정
+    print_diagnostics: true
+    debug: false
+    
+    # 스무딩 설정
+    smooth_lagged_data: true
+    history_length: 10
+    
+    # 동적 프로세스 노이즈 공분산 (속도에 따라 조정)
+    dynamic_process_noise_covariance: false
