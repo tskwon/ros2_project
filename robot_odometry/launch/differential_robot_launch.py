@@ -77,23 +77,22 @@ def generate_launch_description():
 
         # ========== 센서 시스템 ==========
         # RealSense D435i 카메라 드라이버
-        # IncludeLaunchDescription(
-        #     PythonLaunchDescriptionSource([
-        #         get_package_share_directory('realsense2_camera'),
-        #         '/launch/rs_launch.py'
-        #     ]),
-        #     launch_arguments={
-        #         'camera_name': 'camera',
-        #         'camera_namespace': '',
-        #         'enable_depth': 'true',
-        #         'enable_color': 'true',
-        #         'align_depth.enable': 'true',
-        #         'base_frame_id': 'camera_link',  # URDF에 정의된 카메라 링크와 일치
-        #         'use_sim_time': use_sim_time
-        #     }.items()
-        # ),
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource([
+                get_package_share_directory('realsense2_camera'),
+                '/launch/rs_launch.py'
+            ]),
+            launch_arguments={
+                'enable_depth': 'true',
+                'enable_color': 'true',
+                'align_depth.enable': 'true',
+                'base_frame_id': 'camera_link',  # URDF의 camera_link와 연결
+                'publish_tf': 'false',  # TF 충돌 방지: URDF가 TF 담당
+                'use_sim_time': use_sim_time
+            }.items()
+        ),
 
-        # MyAHRS+ IMU 드라이버
+        # MyAHRS+ IMU 드라이버 (선택사항 - 에러 발생 시 주석 처리)
         Node(
             package='myahrs_ros2_driver',
             executable='myahrs_ros2_driver',
@@ -143,42 +142,43 @@ def generate_launch_description():
 
         # ========== ArUco 마커 네비게이션 시스템 ==========
         # ArUco 마커 검출 노드들 (센서 시스템 안정화 후 실행)
-        # TimerAction(
-        #     period=8.0,  # 8초 후 실행 (EKF 안정화 대기)
-        #     actions=[
-        #         Node(
-        #             package='aruco_navigator',
-        #             executable='aruco_detector',
-        #             name='aruco_detector',
-        #             parameters=[{
-        #                 'use_sim_time': use_sim_time,
-        #                 'camera_frame': 'camera_color_optical_frame',  # RealSense optical frame
-        #                 'reference_frame': 'odom',  # odom 좌표계 사용 (추천)
-        #                 'marker_size': 0.1,  # 마커 크기 (미터)
-        #                 'target_distance': 0.5,  # 마커로부터 목표 거리
-        #             }],
-        #             output='screen',
-        #             emulate_tty=True
-        #         ),
+        TimerAction(
+            period=5.0,  # 5초 후 실행
+            actions=[
+                Node(
+                    package='aruco_navigator',
+                    executable='aruco_detector',
+                    name='aruco_detector',
+                    parameters=[{
+                        'use_sim_time': use_sim_time,
+                        'camera_frame': 'camera_color_optical_frame',  # RealSense optical frame
+                        'reference_frame': 'odom',  # odom 좌표계 사용
+                        'marker_size': 0.1,  # 마커 크기 (미터)
+                        'use_ground_projection': True,  # 지면 투영 활성화
+                        'ground_z_offset': 0.0,  # 지면 높이
+                        'use_latest_transform': True,  # 시간 동기화 문제 해결
+                    }],
+                    output='screen',
+                    emulate_tty=True
+                ),
 
-        #         # Node(
-        #         #     package='aruco_navigator',
-        #         #     executable='stable_aruco_detection_node',
-        #         #     name='stable_aruco_detection_node',
-        #         #     parameters=[{
-        #         #         'use_sim_time': use_sim_time,
-        #         #         'detection_timeout': 2.0,  # 검출 안정성 타임아웃
-        #         #         'min_detections': 5,  # 안정 검출 최소 횟수
-        #         #     }],
-        #         #     output='screen'
-        #         # ),
-        #     ]
-        # ),
+                Node(
+                    package='aruco_navigator',
+                    executable='stable_aruco_detection_node',
+                    name='stable_aruco_detection_node',
+                    parameters=[{
+                        'use_sim_time': use_sim_time,
+                        'detection_timeout': 2.0,  # 검출 안정성 타임아웃
+                        'min_detections': 5,  # 안정 검출 최소 횟수
+                    }],
+                    output='screen'
+                ),
+            ]
+        ),
 
-        # ========== 선택사항: 내비게이션 노드 ==========
-        # ArUco 내비게이션 노드 (마커 위치로 이동)
+        # ========== 선택사항: 내비게이션 노드 (실행 파일이 있는 경우만) ==========
         # TimerAction(
-        #     period=10.0,  # 10초 후 실행 (ArUco 검출기 안정화 후)
+        #     period=8.0,  # 8초 후 실행
         #     actions=[
         #         Node(
         #             package='aruco_navigator',
@@ -193,7 +193,8 @@ def generate_launch_description():
         #                 'angle_tolerance': 0.1,  # 각도 허용 오차
         #             }],
         #             output='screen'
-        #         ),
+        #         )
         #     ]
         # ),
+        
     ])

@@ -56,22 +56,33 @@ def generate_launch_description():
     )
     
     # base_link -> camera_link 변환 (실제 로봇의 카메라 위치에 맞게 조정)
+    # 원래 코드에서 이 부분만 수정:
     base_to_camera_tf = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
         name='base_to_camera_tf',
-        arguments=['0.15', '0.0', '0.25', '0.349', '0.0', '0.0',  # 20도 회전: 0.349 라디안
-                  'base_link', 'camera_link'],
+        arguments=['0.15', '0.0', '0.25', '0.0', '-0.25', '0.0',  # pitch를 -0.25로 (아래쪽 향함)
+                'base_link', 'camera_link'],
         output='screen'
     )
     
-    # camera_link -> camera_color_optical_frame 변환 (RealSense 표준)
+    # camera_link -> camera_color_frame 추가
+    camera_color_frame_tf = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='camera_color_frame_tf',
+        arguments=['0.0', '0.0', '0.0', '0.0', '0.0', '0.0',
+                'camera_link', 'camera_color_frame'],
+        output='screen'
+    )
+
+    # camera_color_frame -> camera_color_optical_frame 변환
     camera_to_optical_tf = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
         name='camera_to_optical_tf',
-        arguments=['0.0', '0.0', '0.0', '-1.5708', '0.0', '-1.5708',
-                  'camera_link', 'camera_color_optical_frame'],
+        arguments=['0.0', '0.0', '0.0', '-0.5', '0.5', '-0.5', '0.5',
+                'camera_color_frame', 'camera_color_optical_frame'],
         output='screen'
     )
 

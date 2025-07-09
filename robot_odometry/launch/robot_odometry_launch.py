@@ -47,28 +47,6 @@ def generate_launch_description():
                 'use_sim_time': use_sim_time
             }.items()
         ),
- # ========== TF Static Publishers ==========
-        # Base link to Camera link (카메라가 로봇 앞쪽을 향하도록 올바른 방향 설정)
-        Node(
-            package='tf2_ros',
-            executable='static_transform_publisher',
-            name='base_to_camera_tf',
-            # x, y, z, roll, pitch, yaw 순서
-            # 카메라가 앞쪽 15cm, 위쪽 20cm, 아래쪽을 향하도록 설정
-            arguments=['0.15', '0.0', '0.20', '0.0', '0.5236', '0.0', 
-                      'base_link', 'camera_link'],
-            output='screen'
-        ),
-        
-        # Base link to IMU link
-        Node(
-            package='tf2_ros',
-            executable='static_transform_publisher',
-            name='base_to_imu_tf',
-            arguments=['0.0', '0.0', '0.05', '0.0', '0.0', '0.0', 
-                      'base_link', 'imu_link'],
-            output='screen'
-        ),
         
         # ========== ArUco 마커 검출 및 네비게이션 ==========
         # ArUco 검출기

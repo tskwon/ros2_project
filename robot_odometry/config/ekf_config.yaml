@@ -1,8 +1,8 @@
 ekf_node:
   ros__parameters:
     # 기본 설정
-    frequency: 15.0
-    sensor_timeout: 0.1
+    frequency: 10.0
+    sensor_timeout: 1.0
     two_d_mode: true        # 2D 모드 활성화 (지상 로봇)
     publish_tf: true
     # 맵 프레임 설정
