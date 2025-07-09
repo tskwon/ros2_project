@@ -1,10 +1,10 @@
 ekf_node:
   ros__parameters:
     # 기본 설정
-    frequency: 30.0
+    frequency: 15.0
     sensor_timeout: 0.1
     two_d_mode: true        # 2D 모드 활성화 (지상 로봇)
-    
+    publish_tf: true
     # 맵 프레임 설정
     map_frame: map
     odom_frame: odom
@@ -18,8 +18,8 @@ ekf_node:
     odom0: /odom/robot
     odom0_config: [true,  true,  false,    # x, y, z
                    false, false, true,     # roll, pitch, yaw
-                   true,  true,  false,    # vx, vy, vz
-                   false, false, true,     # vroll, vpitch, vyaw
+                   false,  false,  false,    # vx, vy, vz
+                   false, false, false,     # vroll, vpitch, vyaw
                    false, false, false]    # ax, ay, az
     
     # 엔코더 오도메트리 공분산 (신뢰도 높음)
@@ -33,8 +33,8 @@ ekf_node:
     imu0_config: [false, false, false,     # x, y, z (위치는 사용하지 않음)
                   false, false, true,      # roll, pitch, yaw (yaw만 사용)
                   false, false, false,     # vx, vy, vz
-                  false, false, true,      # vroll, vpitch, vyaw (yaw 각속도만)
-                  true,  true,  false]     # ax, ay, az (선가속도 사용)
+                  false, false, false,      # vroll, vpitch, vyaw (yaw 각속도만)
+                  false,  false,  false]     # ax, ay, az (선가속도 사용)
     
     imu0_differential: false
     imu0_relative: false
@@ -83,7 +83,7 @@ ekf_node:
     
     # 스무딩 설정
     smooth_lagged_data: true
-    history_length: 10
+    history_length: 10.0
     
     # 동적 프로세스 노이즈 공분산 (속도에 따라 조정)
     dynamic_process_noise_covariance: false
