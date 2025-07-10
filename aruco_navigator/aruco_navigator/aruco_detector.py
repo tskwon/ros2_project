@@ -3,7 +3,7 @@ from rclpy.duration import Duration
 from rclpy.node import Node
 from sensor_msgs.msg import Image, CameraInfo
 from geometry_msgs.msg import PoseStamped, TransformStamped
-from std_msgs.msg import Int32
+from std_msgs.msg import Int32, Int32MultiArray
 from cv_bridge import CvBridge
 from tf2_ros import TransformListener, Buffer
 import tf2_geometry_msgs
@@ -80,7 +80,8 @@ class FastArucoWithDepth(Node):
         self.pose_pub = self.create_publisher(PoseStamped, '/aruco/marker_pose', 1)
         self.odom_pose_pub = self.create_publisher(PoseStamped, '/aruco/marker_pose_odom', 1)
         self.visualization_pub = self.create_publisher(Image, '/aruco/visualization', 1)
-        
+        self.detected_ids_pub = self.create_publisher(Int32MultiArray, '/aruco/detected_marker_ids', 1)
+
         # 상태 확인을 위한 타이머 (디버깅용)
         self.status_timer = self.create_timer(2.0, self.status_callback)
 
@@ -244,7 +245,11 @@ class FastArucoWithDepth(Node):
             # odom_pose_array 발행
             if len(odom_pose_array.poses) > 0:
                 self.odom_pose_array_pub.publish(odom_pose_array)
-
+                # 인식된 마커 ID들을 pose 순서와 동일하게 발행
+                detected_ids_msg = Int32MultiArray()
+                detected_ids_msg.data = [int(marker_id) for marker_id, _, _ in pose_array]
+                self.detected_ids_pub.publish(detected_ids_msg)
+                
             self.fps_counter += 1
             if time.time() - self.fps_start_time >= 1.0:
                 fps = self.fps_counter / (time.time() - self.fps_start_time)

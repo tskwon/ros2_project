@@ -31,6 +31,12 @@ def generate_launch_description():
         value_type=str
     )
     
+    nav2_params_file_path = os.path.join(
+        get_package_share_directory('robot_odometry'), # 또는 your_robot_nav_package
+        'config',
+        'nav2_params.yaml' # 위에서 저장한 YAML 파일 이름
+    )
+
     return LaunchDescription([
         DeclareLaunchArgument('use_sim_time', default_value='false'),
         
@@ -59,6 +65,7 @@ def generate_launch_description():
             }]
         ),
 
+        
         # 바퀴 조인트 퍼블리셔: 엔코더를 통해 바퀴 회전 정보를 조인트 상태로 발행
         Node(
             package='robot_odometry',
@@ -176,25 +183,5 @@ def generate_launch_description():
             ]
         ),
 
-        # ========== 선택사항: 내비게이션 노드 (실행 파일이 있는 경우만) ==========
-        # TimerAction(
-        #     period=8.0,  # 8초 후 실행
-        #     actions=[
-        #         Node(
-        #             package='aruco_navigator',
-        #             executable='aruco_navigation_node',
-        #             name='aruco_navigation_node',
-        #             parameters=[{
-        #                 'use_sim_time': use_sim_time,
-        #                 'target_distance': 0.5,  # 마커로부터 목표 거리
-        #                 'max_linear_speed': 0.3,  # 최대 선속도
-        #                 'max_angular_speed': 0.5,  # 최대 각속도
-        #                 'position_tolerance': 0.1,  # 위치 허용 오차
-        #                 'angle_tolerance': 0.1,  # 각도 허용 오차
-        #             }],
-        #             output='screen'
-        #         )
-        #     ]
-        # ),
         
     ])

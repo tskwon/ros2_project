@@ -25,7 +25,8 @@ setup(
         (os.path.join('share', package_name, 'config'), [
             'config/ekf_config.yaml',
             'config/slam_config.yaml',
-            'config/config.yaml'
+            'config/config.yaml',
+            'config/nav2_params.yaml',  # 로봇 설정 파일
         ]),
         
         # URDF 파일들
