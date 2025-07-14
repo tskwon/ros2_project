@@ -6,6 +6,7 @@ from geometry_msgs.msg import PoseStamped
 from cv_bridge import CvBridge
 import cv2
 import numpy as np
+import math
 
 class ArucoDetector(Node):
     def __init__(self):
@@ -32,7 +33,130 @@ class ArucoDetector(Node):
         self.marker_size = 0.1
         self.frame_count = 0 
         self.frame_skip = 2
+        
+        # 이동평균 필터 설정
+        self.filter_window_size = 5  # 이동평균 윈도우 크기
+        self.marker_filters = {}  # 마커 ID별로 필터 관리
+        
         self.get_logger().info('ArUco Detector Node Started')
+        self.get_logger().info(f'Moving average filter enabled (window size: {self.filter_window_size})')
+
+    def init_marker_filter(self, marker_id):
+        """마커별 필터 초기화"""
+        self.marker_filters[marker_id] = {
+            'position_buffer': {'x': [], 'y': [], 'z': []},
+            'orientation_buffer': {'qx': [], 'qy': [], 'qz': [], 'qw': []},
+            'filtered_position': {'x': None, 'y': None, 'z': None},
+            'filtered_orientation': {'qx': None, 'qy': None, 'qz': None, 'qw': None}
+        }
+    
+    def apply_moving_average_filter(self, marker_id, tvec, quaternion):
+        """이동평균 필터 적용"""
+        if marker_id not in self.marker_filters:
+            self.init_marker_filter(marker_id)
+        
+        filter_data = self.marker_filters[marker_id]
+        
+        # 새로운 값 추가
+        filter_data['position_buffer']['x'].append(tvec[0])
+        filter_data['position_buffer']['y'].append(tvec[1])
+        filter_data['position_buffer']['z'].append(tvec[2])
+        
+        filter_data['orientation_buffer']['qx'].append(quaternion[0])
+        filter_data['orientation_buffer']['qy'].append(quaternion[1])
+        filter_data['orientation_buffer']['qz'].append(quaternion[2])
+        filter_data['orientation_buffer']['qw'].append(quaternion[3])
+        
+        # 윈도우 크기 초과 시 오래된 값 제거
+        for key in filter_data['position_buffer']:
+            if len(filter_data['position_buffer'][key]) > self.filter_window_size:
+                filter_data['position_buffer'][key].pop(0)
+        
+        for key in filter_data['orientation_buffer']:
+            if len(filter_data['orientation_buffer'][key]) > self.filter_window_size:
+                filter_data['orientation_buffer'][key].pop(0)
+        
+        # 이동평균 계산
+        filter_data['filtered_position']['x'] = sum(filter_data['position_buffer']['x']) / len(filter_data['position_buffer']['x'])
+        filter_data['filtered_position']['y'] = sum(filter_data['position_buffer']['y']) / len(filter_data['position_buffer']['y'])
+        filter_data['filtered_position']['z'] = sum(filter_data['position_buffer']['z']) / len(filter_data['position_buffer']['z'])
+        
+        filter_data['filtered_orientation']['qx'] = sum(filter_data['orientation_buffer']['qx']) / len(filter_data['orientation_buffer']['qx'])
+        filter_data['filtered_orientation']['qy'] = sum(filter_data['orientation_buffer']['qy']) / len(filter_data['orientation_buffer']['qy'])
+        filter_data['filtered_orientation']['qz'] = sum(filter_data['orientation_buffer']['qz']) / len(filter_data['orientation_buffer']['qz'])
+        filter_data['filtered_orientation']['qw'] = sum(filter_data['orientation_buffer']['qw']) / len(filter_data['orientation_buffer']['qw'])
+        
+        # 쿼터니언 정규화
+        qx = filter_data['filtered_orientation']['qx']
+        qy = filter_data['filtered_orientation']['qy']
+        qz = filter_data['filtered_orientation']['qz']
+        qw = filter_data['filtered_orientation']['qw']
+        norm = math.sqrt(qx*qx + qy*qy + qz*qz + qw*qw)
+        
+        if norm > 0:
+            filter_data['filtered_orientation']['qx'] /= norm
+            filter_data['filtered_orientation']['qy'] /= norm
+            filter_data['filtered_orientation']['qz'] /= norm
+            filter_data['filtered_orientation']['qw'] /= norm
+        
+        # 필터링된 값 반환
+        filtered_tvec = np.array([
+            filter_data['filtered_position']['x'],
+            filter_data['filtered_position']['y'],
+            filter_data['filtered_position']['z']
+        ])
+        
+        filtered_quaternion = np.array([
+            filter_data['filtered_orientation']['qx'],
+            filter_data['filtered_orientation']['qy'],
+            filter_data['filtered_orientation']['qz'],
+            filter_data['filtered_orientation']['qw']
+        ])
+        
+        return filtered_tvec, filtered_quaternion
+    
+    def quaternion_to_euler(self, qx, qy, qz, qw):
+        """쿼터니언을 오일러 각도로 변환"""
+        # Roll (x-axis rotation)
+        sinr_cosp = 2 * (qw * qx + qy * qz)
+        cosr_cosp = 1 - 2 * (qx * qx + qy * qy)
+        roll = math.atan2(sinr_cosp, cosr_cosp)
+        
+        # Pitch (y-axis rotation)
+        sinp = 2 * (qw * qy - qz * qx)
+        if abs(sinp) >= 1:
+            pitch = math.copysign(math.pi / 2, sinp)
+        else:
+            pitch = math.asin(sinp)
+        
+        # Yaw (z-axis rotation)
+        siny_cosp = 2 * (qw * qz + qx * qy)
+        cosy_cosp = 1 - 2 * (qy * qy + qz * qz)
+        yaw = math.atan2(siny_cosp, cosy_cosp)
+        
+        return np.array([roll, pitch, yaw])
+
+    def rotation_vector_to_euler(self, rvec):
+        """회전 벡터를 오일러 각도(roll, pitch, yaw)로 변환"""
+        # 회전 벡터를 회전 행렬로 변환
+        rot_matrix, _ = cv2.Rodrigues(rvec)
+        
+        # 회전 행렬을 오일러 각도로 변환
+        # ZYX 순서 (yaw, pitch, roll)
+        sy = math.sqrt(rot_matrix[0, 0] * rot_matrix[0, 0] + rot_matrix[1, 0] * rot_matrix[1, 0])
+        
+        singular = sy < 1e-6
+        
+        if not singular:
+            x = math.atan2(rot_matrix[2, 1], rot_matrix[2, 2])  # roll
+            y = math.atan2(-rot_matrix[2, 0], sy)               # pitch
+            z = math.atan2(rot_matrix[1, 0], rot_matrix[0, 0])  # yaw
+        else:
+            x = math.atan2(-rot_matrix[1, 2], rot_matrix[1, 1])  # roll
+            y = math.atan2(-rot_matrix[2, 0], sy)                # pitch
+            z = 0                                                # yaw
+        
+        return np.array([x, y, z])  # [roll, pitch, yaw]
 
     def image_callback(self, msg):
         self.frame_count = (self.frame_count + 1) % 1000000
@@ -75,25 +199,62 @@ class ArucoDetector(Node):
                         cv2.drawFrameAxes(cv_image, self.camera_matrix, self.dist_coeffs,
                                         rvec, tvec, self.marker_size * 0.5)
 
+                        # 원본 위치 정보
                         tvec_flat = tvec.flatten()
                         distance = np.linalg.norm(tvec_flat)
+                        
+                        # 원본 각도 정보 계산
+                        euler_angles = self.rotation_vector_to_euler(rvec)
+                        roll = euler_angles[0]
+                        pitch = euler_angles[1]
+                        yaw = euler_angles[2]
+                        
+                        # 쿼터니언 계산
+                        rot_matrix, _ = cv2.Rodrigues(rvec)
+                        quaternion = self.rotation_matrix_to_quaternion(rot_matrix)
+                        
+                        # 이동평균 필터 적용
+                        filtered_tvec, filtered_quaternion = self.apply_moving_average_filter(
+                            ids[i][0], tvec_flat, quaternion)
+                        
+                        # 필터링된 값들로 다시 계산
+                        filtered_distance = np.linalg.norm(filtered_tvec)
+                        filtered_euler = self.quaternion_to_euler(
+                            filtered_quaternion[0], filtered_quaternion[1], 
+                            filtered_quaternion[2], filtered_quaternion[3])
+                        filtered_roll = filtered_euler[0]
+                        filtered_pitch = filtered_euler[1]
+                        filtered_yaw = filtered_euler[2]
+                        
+                        # 필터링 효과 확인을 위한 노이즈 계산
+                        if ids[i][0] in self.marker_filters:
+                            filter_data = self.marker_filters[ids[i][0]]
+                            if len(filter_data['position_buffer']['z']) >= self.filter_window_size:
+                                distance_std = np.std(filter_data['position_buffer']['z'])
+                                if distance_std > 0.005:  # 5mm 이상의 노이즈
+                                    self.get_logger().debug(f'Marker {ids[i][0]} distance noise std: {distance_std:.4f}m')
+                        
+                        # 로그 출력 (필터링된 값 + 원본 값 비교)
                         self.get_logger().info(
-                            f'Marker ID {ids[i][0]}: x={tvec_flat[0]:.3f}m, y={tvec_flat[1]:.3f}m, '
-                            f'z={tvec_flat[2]:.3f}m, distance={distance:.3f}m')
+                            f'Marker ID {ids[i][0]} [FILTERED]: '
+                            f'x={filtered_tvec[0]:.3f}m, y={filtered_tvec[1]:.3f}m, z={filtered_tvec[2]:.3f}m, '
+                            f'distance={filtered_distance:.3f}m | '
+                            f'roll={math.degrees(filtered_roll):.1f}°, pitch={math.degrees(filtered_pitch):.1f}°, yaw={math.degrees(filtered_yaw):.1f}° | '
+                            f'roll={filtered_roll:.3f}rad, pitch={filtered_pitch:.3f}rad, yaw={filtered_yaw:.3f}rad')
 
+                        # 포즈 메시지 생성 (필터링된 값 사용)
                         pose_msg = PoseStamped()
                         pose_msg.header = msg.header
                         pose_msg.header.frame_id = f'marker_{ids[i][0]}'
-                        pose_msg.pose.position.x = float(tvec_flat[0])
-                        pose_msg.pose.position.y = float(tvec_flat[1])
-                        pose_msg.pose.position.z = float(tvec_flat[2])
+                        pose_msg.pose.position.x = float(filtered_tvec[0])
+                        pose_msg.pose.position.y = float(filtered_tvec[1])
+                        pose_msg.pose.position.z = float(filtered_tvec[2])
 
-                        rot_matrix, _ = cv2.Rodrigues(rvec)
-                        quaternion = self.rotation_matrix_to_quaternion(rot_matrix)
-                        pose_msg.pose.orientation.x = quaternion[0]
-                        pose_msg.pose.orientation.y = quaternion[1]
-                        pose_msg.pose.orientation.z = quaternion[2]
-                        pose_msg.pose.orientation.w = quaternion[3]
+                        # 필터링된 쿼터니언 설정
+                        pose_msg.pose.orientation.x = filtered_quaternion[0]
+                        pose_msg.pose.orientation.y = filtered_quaternion[1]
+                        pose_msg.pose.orientation.z = filtered_quaternion[2]
+                        pose_msg.pose.orientation.w = filtered_quaternion[3]
 
                         self.pose_pub.publish(pose_msg)
 
@@ -102,7 +263,6 @@ class ArucoDetector(Node):
 
         except Exception as e:
             self.get_logger().error(f'Error processing image: {str(e)}')
-
 
     def rotation_matrix_to_quaternion(self, R):
         """회전 행렬을 쿼터니언으로 변환"""

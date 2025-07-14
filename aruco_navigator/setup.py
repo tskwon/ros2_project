@@ -9,7 +9,7 @@ setup(
     version='0.0.1',
     packages=[package_name],
     data_files=[
-        ('share/ament_index/resource_index/packages',
+        ('share/ament_index/resourc_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/launch', ['launch/aruco_navigation_launch.py']),
@@ -28,9 +28,6 @@ setup(
             'aruco_detector = aruco_navigator.aruco_detector:main', # 새 스크립트 추가
             'aruco_marker_detector = aruco_navigator.aruco_marker_detector:main'    ,
             'marker_navigator = aruco_navigator.marker_navigator:main',
-            'robot_display = aruco_navigator.robot_display:main',
-            'camera_calibrator = aruco_navigator.camera_calibrator_node:main',
-            'stable_aruco_detection_node = aruco_navigator.stable_aruco_marker:main',
             'aruco_marker_navigation = aruco_navigator.aruco_marker_naviagtion:main',
         ],
     },

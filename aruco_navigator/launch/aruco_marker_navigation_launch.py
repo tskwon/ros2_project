@@ -22,15 +22,15 @@ def generate_launch_description():
         }],
         output='screen'
     )
-    aruco_marker_navigation = Node(
-        package='aruco_navigator',
-        executable='aruco_marker_navigation',
-        name='aruco_marker_navigation',
-        parameters=[{
-            'use_sim_time': use_sim_time
-        }],
-        output='screen'
-    )
+    # aruco_marker_navigation = Node(
+    #     package='aruco_navigator',
+    #     executable='aruco_marker_navigation',
+    #     name='aruco_marker_navigation',
+    #     parameters=[{
+    #         'use_sim_time': use_sim_time
+    #     }],
+    #     output='screen'
+    # )
 
     # ========== RealSense D435 카메라 ==========
     realsense_camera = IncludeLaunchDescription(
@@ -64,6 +64,5 @@ def generate_launch_description():
         # 노드들
         realsense_camera,
         aruco_detector,
-        aruco_marker_navigation,
         md_controller,
     ])

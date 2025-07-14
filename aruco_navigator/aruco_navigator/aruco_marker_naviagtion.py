@@ -5,7 +5,6 @@ from geometry_msgs.msg import PoseStamped, Twist
 from std_msgs.msg import Int32
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
-import cv2
 import numpy as np
 import math
 from enum import Enum
@@ -47,18 +46,37 @@ class ArucoRobotController(Node):
         
         # 제어 파라미터
         self.target_distance = None  
-        self.distance_tolerance = 0.03 
+        self.distance_tolerance = 0.05 
         self.angle_tolerance = 0.017  
-        self.lateral_tolerance = 0.03  
+        self.lateral_tolerance = 0.05
+        self.final_pitch_tolerance = 0.0349  # 2도 (최종 pitch 정렬을 위한 허용 오차)
         
         # 속도 제한
-        self.max_linear_vel = 0.15
-        self.max_angular_vel = 0.3
+        self.max_linear_vel = 0.28
+        self.max_angular_vel = 0.7
         
-        # PID 게인
-        self.kp_distance = 0.5
-        self.kp_lateral = 0.8
-        self.kp_angular = 0.6
+        # PI 제어 게인
+        self.kp_distance = 0.4
+        self.ki_distance = 0.001
+        
+        self.kp_lateral = 0.35
+        self.ki_lateral = 0.01
+        
+        self.kp_angular = 0.4
+        self.ki_angular = 0.1
+        
+        # 적분항 관리
+        self.integral_distance = 0.0
+        self.integral_lateral = 0.0
+        self.integral_angular = 0.0
+        
+        # 적분항 제한 (windup 방지)
+        self.integral_limit_distance = 0.5
+        self.integral_limit_lateral = 0.3
+        self.integral_limit_angular = 0.3
+        
+        # 이전 시간 저장 (dt 계산용)
+        self.last_control_time = self.get_clock().now()
         
         # 상태 관리
         self.state = RobotState.IDLE  # 초기 상태를 IDLE로 변경
@@ -72,7 +90,7 @@ class ArucoRobotController(Node):
         # 마커 정보
         self.marker_distance = None
         self.marker_lateral = None
-        self.marker_yaw = None
+        self.marker_pitch = None  # yaw 대신 pitch 사용
         self.current_pose = None
         
         # 제어 타이머
@@ -89,9 +107,20 @@ class ArucoRobotController(Node):
         self.current_mission_id = None
         self.current_mission_distance = None
         
-        self.get_logger().info('ArUco Robot Controller Started')
+        # 최종 pitch 정렬 상태
+        self.final_pitch_aligned = False
+        
+        self.get_logger().info('ArUco Robot Controller with PI Control Started')
         self.get_logger().info('Robot in IDLE state - completely stopped')
         self.get_logger().info('Set target_id and target_distance to start mission')
+        
+    def reset_integrals(self):
+        """적분항 초기화"""
+        self.integral_distance = 0.0
+        self.integral_lateral = 0.0
+        self.integral_angular = 0.0
+        self.last_control_time = self.get_clock().now()
+        self.get_logger().info('PI control integrals reset')
         
     def target_distance_callback(self, msg):
         """타겟 거리 수신 (cm 단위)"""
@@ -126,6 +155,7 @@ class ArucoRobotController(Node):
             else:
                 self.state = RobotState.APPROACHING
                 self.state_change_counter = 0
+                self.reset_integrals()  # 적분항 초기화
                 self.get_logger().info('Distance changed during mission, restarting approach...')
         
     def target_id_callback(self, msg):
@@ -156,10 +186,14 @@ class ArucoRobotController(Node):
         self.state = RobotState.SEARCHING
         self.state_change_counter = 0
         self.mission_completed = False
+        self.final_pitch_aligned = False  # 최종 pitch 정렬 초기화
         
         # 현재 미션 파라미터 저장
         self.current_mission_id = self.target_id
         self.current_mission_distance = self.target_distance
+        
+        # 적분항 초기화
+        self.reset_integrals()
         
         self.get_logger().info(f'=== MISSION STARTED ===')
         self.get_logger().info(f'Target: ID={self.target_id}, Distance={self.target_distance:.2f}m')
@@ -198,15 +232,25 @@ class ArucoRobotController(Node):
             self.get_logger().warn(f'Invalid pose data: distance={z:.3f}m. Ignoring...')
             return
         
-        # 쿼터니언을 오일러 각도로 변환
+        # 쿼터니언을 오일러 각도로 변환하여 pitch 계산
         qx = msg.pose.orientation.x
         qy = msg.pose.orientation.y
         qz = msg.pose.orientation.z
         qw = msg.pose.orientation.w
         
-        # Yaw 각도 계산
-        self.marker_yaw = math.atan2(2.0 * (qw * qz + qx * qy), 
-                                    1.0 - 2.0 * (qy * qy + qz * qz))
+        # 회전 행렬 계산
+        rot_matrix = np.array([
+            [1 - 2*(qy**2 + qz**2), 2*(qx*qy - qw*qz), 2*(qx*qz + qw*qy)],
+            [2*(qx*qy + qw*qz), 1 - 2*(qx**2 + qz**2), 2*(qy*qz - qw*qx)],
+            [2*(qx*qz - qw*qy), 2*(qy*qz + qw*qx), 1 - 2*(qx**2 + qy**2)]
+        ])
+        
+        # Pitch 각도 계산 (Y축 중심 회전)
+        sy = math.sqrt(rot_matrix[0, 0]**2 + rot_matrix[1, 0]**2)
+        if sy > 1e-6:
+            self.marker_pitch = math.atan2(-rot_matrix[2, 0], sy)
+        else:
+            self.marker_pitch = math.atan2(-rot_matrix[2, 0], sy)
         
         self.marker_distance = z
         self.marker_lateral = x
@@ -214,9 +258,10 @@ class ArucoRobotController(Node):
         # 상태 업데이트
         if self.state == RobotState.SEARCHING:
             if (self.marker_distance is not None and self.marker_lateral is not None and 
-                self.marker_yaw is not None and self.target_distance is not None):
+                self.marker_pitch is not None and self.target_distance is not None):
                 self.state = RobotState.APPROACHING
                 self.state_change_counter = 0
+                self.reset_integrals()  # 적분항 초기화
                 self.get_logger().info(f'Target marker {self.target_id} detected! Starting approach...')
 
     def control_loop(self):
@@ -232,6 +277,7 @@ class ArucoRobotController(Node):
                 self.get_logger().info('Missing target information, returning to IDLE state')
                 self.state = RobotState.IDLE
                 self.state_change_counter = 0
+                self.reset_integrals()
             self.stop_robot()
             return
             
@@ -244,6 +290,7 @@ class ArucoRobotController(Node):
                     self.get_logger().warn(f'Target marker {self.target_id} lost! Searching again...')
                     self.state = RobotState.SEARCHING
                     self.state_change_counter = 0
+                    self.reset_integrals()  # 적분항 초기화
                 self.search_behavior()
                 return
         
@@ -267,15 +314,31 @@ class ArucoRobotController(Node):
             self.stop_robot()
 
     def approach_behavior(self):
-        """마커 접근 행동"""
+        """마커 접근 행동 - PI 제어 적용"""
         if self.current_pose is None or self.marker_distance is None or self.target_distance is None:
             self.stop_robot()
             return
             
+        # 시간 계산
+        current_time = self.get_clock().now()
+        dt = (current_time - self.last_control_time).nanoseconds / 1e9
+        self.last_control_time = current_time
+        
+        # dt가 너무 크면 적분항 초기화 (긴 시간 간격 후 첫 제어)
+        if dt > 0.5:
+            self.reset_integrals()
+            return
+        
         twist = Twist()
         
-        # 거리 제어
+        # 거리 제어 (PI 제어)
         distance_error = self.marker_distance - self.target_distance
+        
+        # 거리 적분항 계산
+        self.integral_distance += distance_error * dt
+        # 적분항 제한 (windup 방지)
+        self.integral_distance = max(-self.integral_limit_distance, 
+                                   min(self.integral_limit_distance, self.integral_distance))
         
         # 목표 거리 도달 체크
         if abs(distance_error) < self.distance_tolerance:
@@ -283,22 +346,33 @@ class ArucoRobotController(Node):
             if self.state_change_counter >= self.state_change_threshold:
                 self.state = RobotState.ALIGNING
                 self.state_change_counter = 0
+                self.reset_integrals()  # 정렬 단계로 전환 시 적분항 초기화
                 self.get_logger().info('Target distance reached! Starting alignment...')
                 return
         else:
             self.state_change_counter = 0
         
-        # 선속도 계산
-        linear_vel = self.kp_distance * distance_error
+        # PI 제어로 선속도 계산
+        linear_vel = (self.kp_distance * distance_error + 
+                     self.ki_distance * self.integral_distance)
         
         # 속도 제한 및 최소 속도 설정
         if abs(linear_vel) < 0.02:
             linear_vel = 0.02 if linear_vel > 0 else -0.02
         linear_vel = max(-self.max_linear_vel, min(self.max_linear_vel, linear_vel))
         
-        # 좌우 정렬을 위한 각속도 계산
+        # 좌우 정렬을 위한 PI 제어
         lateral_error = self.marker_lateral
-        angular_vel = -self.kp_lateral * lateral_error
+        
+        # 좌우 적분항 계산
+        self.integral_lateral += lateral_error * dt
+        # 적분항 제한 (windup 방지)
+        self.integral_lateral = max(-self.integral_limit_lateral, 
+                                  min(self.integral_limit_lateral, self.integral_lateral))
+        
+        # PI 제어로 각속도 계산
+        angular_vel = -(self.kp_lateral * lateral_error + 
+                       self.ki_lateral * self.integral_lateral)
         
         # 각속도 제한
         angular_vel = max(-self.max_angular_vel, min(self.max_angular_vel, angular_vel))
@@ -313,16 +387,28 @@ class ArucoRobotController(Node):
         
         self.cmd_vel_pub.publish(twist)
         
-        self.get_logger().info(f'Approaching - Distance: {self.marker_distance:.3f}m, '
+        self.get_logger().info(f'Approaching (PI) - Distance: {self.marker_distance:.3f}m, '
                              f'Lateral: {self.marker_lateral:.3f}m, '
-                             f'Linear: {twist.linear.x:.3f}, Angular: {twist.angular.z:.3f}')
+                             f'Pitch: {self.marker_pitch:.3f}rad ({math.degrees(self.marker_pitch):.1f}°), '
+                             f'Linear: {twist.linear.x:.3f}, Angular: {twist.angular.z:.3f}, '
+                             f'I_dist: {self.integral_distance:.3f}, I_lat: {self.integral_lateral:.3f}')
 
     def align_behavior(self):
-        """마커 방향 정렬 행동"""
+        """마커 방향 정렬 행동 - PI 제어 적용"""
         if (self.current_pose is None or self.marker_distance is None or 
-            self.marker_lateral is None or self.marker_yaw is None or 
+            self.marker_lateral is None or self.marker_pitch is None or 
             self.target_distance is None):
             self.stop_robot()
+            return
+            
+        # 시간 계산
+        current_time = self.get_clock().now()
+        dt = (current_time - self.last_control_time).nanoseconds / 1e9
+        self.last_control_time = current_time
+        
+        # dt가 너무 크면 적분항 초기화
+        if dt > 0.5:
+            self.reset_integrals()
             return
             
         twist = Twist()
@@ -332,12 +418,13 @@ class ArucoRobotController(Node):
         if abs(distance_error) > self.distance_tolerance * 3:
             self.state = RobotState.APPROACHING
             self.state_change_counter = 0
+            self.reset_integrals()  # 접근 단계로 전환 시 적분항 초기화
             self.get_logger().info('Distance too far, returning to approach mode...')
             return
         
         # 정렬 상태 확인
         lateral_error = self.marker_lateral
-        angle_error = self.marker_yaw
+        angle_error = self.marker_pitch  # pitch 사용
         
         lateral_aligned = abs(lateral_error) <= self.lateral_tolerance
         angle_aligned = abs(angle_error) <= self.angle_tolerance or abs(angle_error - 2*math.pi) <= self.angle_tolerance or abs(angle_error + 2*math.pi) <= self.angle_tolerance
@@ -349,42 +436,118 @@ class ArucoRobotController(Node):
             if self.state_change_counter >= self.state_change_threshold:
                 self.state = RobotState.FINISHED
                 self.state_change_counter = 0
-                self.get_logger().info('Alignment completed! Mission finished.')
+                self.reset_integrals()  # 완료 단계로 전환 시 적분항 초기화
+                self.get_logger().info('Alignment completed! Starting final pitch alignment...')
                 return
         else:
             self.state_change_counter = 0
             
-            # 정렬 제어
+            # PI 제어로 정렬 수행
             if not lateral_aligned:
-                angular_vel = -self.kp_lateral * lateral_error * 0.3
+                # 좌우 적분항 계산
+                self.integral_lateral += lateral_error * dt
+                self.integral_lateral = max(-self.integral_limit_lateral, 
+                                          min(self.integral_limit_lateral, self.integral_lateral))
+                
+                angular_vel = -(self.kp_lateral * lateral_error * 0.3 + 
+                               self.ki_lateral * self.integral_lateral * 0.3)
                 angular_vel = max(-self.max_angular_vel * 0.3, min(self.max_angular_vel * 0.3, angular_vel))
                 twist.angular.z = angular_vel
+                
             elif not angle_aligned:
                 normalized_angle = angle_error
                 if normalized_angle > math.pi:
                     normalized_angle -= 2 * math.pi
                 elif normalized_angle < -math.pi:
                     normalized_angle += 2 * math.pi
-                    
-                angular_vel = -self.kp_angular * normalized_angle * 0.3
+                
+                # 각도 적분항 계산
+                self.integral_angular += normalized_angle * dt
+                self.integral_angular = max(-self.integral_limit_angular, 
+                                          min(self.integral_limit_angular, self.integral_angular))
+                
+                angular_vel = -(self.kp_angular * normalized_angle * 1.1 + 
+                               self.ki_angular * self.integral_angular * 1.1)
                 angular_vel = max(-self.max_angular_vel * 0.3, min(self.max_angular_vel * 0.3, angular_vel))
                 twist.angular.z = angular_vel
         
-        # 미세 거리 조정
+        # 미세 거리 조정 (PI 제어)
         if abs(distance_error) > self.distance_tolerance * 0.5:
-            linear_vel = self.kp_distance * distance_error * 0.2
+            self.integral_distance += distance_error * dt
+            self.integral_distance = max(-self.integral_limit_distance * 0.1, 
+                                       min(self.integral_limit_distance * 0.1, self.integral_distance))
+            
+            linear_vel = (self.kp_distance * distance_error * 1.1 + 
+                         self.ki_distance * self.integral_distance * 1.1)
             linear_vel = max(-0.03, min(0.03, linear_vel))
             twist.linear.x = linear_vel
         
         self.cmd_vel_pub.publish(twist)
         
-        self.get_logger().info(f'Aligning - Lateral: {self.marker_lateral:.3f}m, '
-                             f'Yaw: {self.marker_yaw:.3f}rad, '
+        self.get_logger().info(f'Aligning (PI) - Lateral: {self.marker_lateral:.3f}m, '
+                             f'Pitch: {self.marker_pitch:.3f}rad ({math.degrees(self.marker_pitch):.1f}°), '
                              f'Distance: {self.marker_distance:.3f}m, '
-                             f'L_OK: {lateral_aligned}, A_OK: {angle_aligned}, D_OK: {distance_ok}')
+                             f'L_OK: {lateral_aligned}, A_OK: {angle_aligned}, D_OK: {distance_ok}, '
+                             f'I_lat: {self.integral_lateral:.3f}, I_ang: {self.integral_angular:.3f}')
 
     def finish_behavior(self):
-        """미션 완료 후 행동"""
+        """미션 완료 후 행동 - 최종 pitch 정렬 수행 (PI 제어)"""
+        # 마커 검출 중단 시 정지
+        current_time = self.get_clock().now()
+        if (current_time - self.last_pose_time).nanoseconds / 1e9 > self.pose_timeout:
+            self.stop_robot()
+            if not self.mission_completed:
+                self.mission_completed = True
+                self.get_logger().info('=== MISSION COMPLETED ===')
+                self.get_logger().info(f'Successfully reached marker {self.target_id} at {self.target_distance:.2f}m')
+                self.get_logger().info('Marker lost. Robot stopped.')
+            return
+        
+        # 최종 pitch 정렬 수행 (PI 제어)
+        if self.marker_pitch is not None and not self.final_pitch_aligned:
+            # 시간 계산
+            dt = (current_time - self.last_control_time).nanoseconds / 1e9
+            self.last_control_time = current_time
+            
+            # dt가 너무 크면 적분항 초기화
+            if dt > 0.5:
+                self.reset_integrals()
+                return
+            
+            twist = Twist()
+            
+            # pitch 각도 정규화
+            normalized_pitch = self.marker_pitch
+            if normalized_pitch > math.pi:
+                normalized_pitch -= 2 * math.pi
+            elif normalized_pitch < -math.pi:
+                normalized_pitch += 2 * math.pi
+            
+            # 최종 pitch 정렬 확인
+            if abs(normalized_pitch) <= self.final_pitch_tolerance:
+                self.state_change_counter += 1
+                if self.state_change_counter >= self.state_change_threshold:
+                    self.final_pitch_aligned = True
+                    self.state_change_counter = 0
+                    self.get_logger().info('Final pitch alignment completed!')
+            else:
+                self.state_change_counter = 0
+                
+                # 최종 pitch 정렬을 위한 PI 제어
+                self.integral_angular += normalized_pitch * dt
+                self.integral_angular = max(-self.integral_limit_angular * 0.1, 
+                                          min(self.integral_limit_angular * 0.1, self.integral_angular))
+                
+                angular_vel = -(self.kp_angular * normalized_pitch * 0.2 + 
+                               self.ki_angular * self.integral_angular * 0.2)
+                angular_vel = max(-self.max_angular_vel * 0.2, min(self.max_angular_vel * 0.2, angular_vel))
+                twist.angular.z = angular_vel
+                
+                self.cmd_vel_pub.publish(twist)
+                self.get_logger().info(f'Final pitch alignment (PI) - Pitch: {self.marker_pitch:.3f}rad ({math.degrees(self.marker_pitch):.1f}°), '
+                                     f'I_ang: {self.integral_angular:.3f}')
+                return
+        
         # 완전히 정지
         self.stop_robot()
         
@@ -393,7 +556,8 @@ class ArucoRobotController(Node):
             self.mission_completed = True
             self.get_logger().info('=== MISSION COMPLETED ===')
             self.get_logger().info(f'Successfully reached marker {self.target_id} at {self.target_distance:.2f}m')
-            self.get_logger().info('Robot stopped. Send new target_id or target_distance to start new mission.')
+            self.get_logger().info('Final pitch alignment completed! Robot stopped.')
+            self.get_logger().info('Send new target_id or target_distance to start new mission.')
 
     def stop_robot(self):
         """로봇 정지"""
