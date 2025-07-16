@@ -9,6 +9,7 @@ import numpy as np
 from ultralytics import YOLO
 import time
 import math
+from collections import deque
 
 class YoloObbNode(Node):
     def __init__(self):
@@ -35,17 +36,20 @@ class YoloObbNode(Node):
         self.latest_color_image = None
         self.latest_depth_image = None
         
+        # 뎁스 값 안정화를 위한 버퍼 (최근 5개 값의 평균)
+        self.depth_buffer = deque(maxlen=5)
+        
         # 구독자들
         self.color_sub = self.create_subscription(
             Image,
-            '/camera/realsense/color/image_raw',
+            '/d415/realsense_d415/color/image_raw',
             self.color_callback,
             1
         )
         
         self.depth_sub = self.create_subscription(
             Image,
-            '/camera/realsense/depth/image_rect_raw',
+            '/d415/realsense_d415/depth/image_rect_raw',
             self.depth_callback,
             1
         )
@@ -56,8 +60,8 @@ class YoloObbNode(Node):
         # OpenCV 윈도우 설정
         cv2.namedWindow('YOLO Detection', cv2.WINDOW_AUTOSIZE)
         
-        # 처리 타이머 (15Hz)
-        self.timer = self.create_timer(0.067, self.process_images)
+        # 처리 타이머 (10Hz로 낮춤 - 더 안정적)
+        self.timer = self.create_timer(0.1, self.process_images)
         
         self.get_logger().info('YOLO OBB Node started - Press ESC to quit')
 
@@ -74,23 +78,33 @@ class YoloObbNode(Node):
             self.get_logger().error(f'Depth callback error: {str(e)}')
 
     def get_depth_at_point(self, x, y):
-        """특정 픽셀 위치의 depth 값 반환 (mm 단위)"""
+        """특정 픽셀 위치의 depth 값 반환 (mm 단위) - 안정화된 버전"""
         if self.latest_depth_image is None:
             return None
         
         height, width = self.latest_depth_image.shape
         if 0 <= x < width and 0 <= y < height:
-            # 주변 3x3 영역의 평균값 계산
-            x_start = max(0, x-1)
-            x_end = min(width, x+2)
-            y_start = max(0, y-1)
-            y_end = min(height, y+2)
+            # 주변 5x5 영역의 중앙값 계산 (노이즈 감소)
+            x_start = max(0, x-2)
+            x_end = min(width, x+3)
+            y_start = max(0, y-2)
+            y_end = min(height, y+3)
             
             depth_region = self.latest_depth_image[y_start:y_end, x_start:x_end]
             valid_depths = depth_region[depth_region > 0]
             
             if len(valid_depths) > 0:
-                return np.mean(valid_depths)
+                # 중앙값 사용 (평균보다 노이즈에 강함)
+                current_depth = np.median(valid_depths)
+                
+                # 버퍼에 추가
+                self.depth_buffer.append(current_depth)
+                
+                # 버퍼의 평균값 반환 (시간적 안정화)
+                if len(self.depth_buffer) >= 3:  # 최소 3개 값이 있을 때만
+                    return np.mean(self.depth_buffer)
+                else:
+                    return current_depth
         return None
 
     def process_images(self):
@@ -98,9 +112,7 @@ class YoloObbNode(Node):
             return
         try:
             # YOLO 추론
-            # imgsz는 224가 아닌, 모델 학습 시 사용한 이미지 크기나, 추론 시 성능과 정확도 간의 적절한 트레이드오프를 고려한 크기로 설정해야 합니다.
-            # 일반적으로 640이 많이 사용됩니다. 여기서는 원본 이미지 크기 (None)를 사용하거나 적절한 값을 지정하세요.
-            results = self.model.predict(source=self.latest_color_image, imgsz=self.latest_color_image.shape[0], conf=self.conf_threshold, verbose=False)
+            results = self.model.predict(source=self.latest_color_image, imgsz=640, conf=self.conf_threshold, verbose=False)
             
             # 결과 그리기
             annotated = self.draw_results(self.latest_color_image, results[0])
@@ -122,18 +134,12 @@ class YoloObbNode(Node):
         
         if result.obb is not None and len(result.obb) > 0:
             obb_coords = result.obb.xyxyxyxy.cpu().numpy()
-            # confidences = result.obb.conf.cpu().numpy() # 굳이 사용하지 않으면 제거 가능
             
             for i, coords in enumerate(obb_coords):
                 # OBB 좌표 (x0, y0, x1, y1, x2, y2, x3, y3)
                 points = coords.reshape(4, 2).astype(np.int32)
                 
                 # 변의 길이 계산
-                # OBB 꼭짓점 순서는 (좌상, 우상, 우하, 좌하) 또는 이와 유사한 순환 순서를 따릅니다.
-                # 예를 들어, point0-point1-point2-point3-point0
-                # side1: point0 to point1
-                # side2: point1 to point2
-                
                 len_side1 = np.linalg.norm(points[1] - points[0])
                 len_side2 = np.linalg.norm(points[2] - points[1])
                 
@@ -141,16 +147,12 @@ class YoloObbNode(Node):
                 end_point = None
                 
                 if len_side1 <= len_side2:
-                    # points[0]에서 points[1]으로 가는 변이 짧은 변
                     start_point = points[0]
                     end_point = points[1]
-                    # 각도 계산 (짧은 변 기준)
                     angle = math.degrees(math.atan2(points[1][1] - points[0][1], points[1][0] - points[0][0]))
                 else:
-                    # points[1]에서 points[2]으로 가는 변이 짧은 변
                     start_point = points[1]
                     end_point = points[2]
-                    # 각도 계산 (짧은 변 기준)
                     angle = math.degrees(math.atan2(points[2][1] - points[1][1], points[2][0] - points[1][0]))
                 
                 # 각도를 0-360 범위로 정규화
@@ -161,7 +163,7 @@ class YoloObbNode(Node):
                 center_x = np.mean(points[:, 0])
                 center_y = np.mean(points[:, 1])
                 
-                # 중심점의 depth 값
+                # 중심점의 depth 값 (안정화된 버전)
                 depth_mm = self.get_depth_at_point(int(center_x), int(center_y))
                 
                 # OBB 박스 그리기
@@ -180,14 +182,8 @@ class YoloObbNode(Node):
                 else:
                     info_text = f"x:{center_x:.0f} y:{center_y:.0f} deg:{angle:.0f} depth:N/A"
                 
-                # 텍스트 배경 (선택 사항, 필요시 주석 해제)
-                # text_size = cv2.getTextSize(info_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)[0]
-                # text_x = int(center_x) - text_size[0]//2
-                # text_y = int(center_y) - 20
-                # cv2.rectangle(annotated, (text_x-5, text_y-15), (text_x+text_size[0]+5, text_y+5), (0, 0, 0), -1)
-                
                 # 텍스트
-                cv2.putText(annotated, info_text, (int(center_x) - 70, int(center_y) - 20), # 텍스트 위치 조정
+                cv2.putText(annotated, info_text, (int(center_x) - 70, int(center_y) - 20),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
                 
                 # 터미널 로그

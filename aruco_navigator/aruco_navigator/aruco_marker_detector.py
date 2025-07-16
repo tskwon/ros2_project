@@ -32,7 +32,7 @@ class ArucoDetector(Node):
         # 마커 크기 (미터 단위, 예: 5cm)
         self.marker_size = 0.1
         self.frame_count = 0 
-        self.frame_skip = 2
+        self.frame_skip = 1
         
         # 이동평균 필터 설정
         self.filter_window_size = 5  # 이동평균 윈도우 크기
