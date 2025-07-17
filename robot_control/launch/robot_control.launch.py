@@ -12,16 +12,6 @@ def generate_launch_description():
     # Launch 인자 선언
     use_sim_time = LaunchConfiguration('use_sim_time')
     
-    # ArUco 검출기
-    # aruco_detector = Node(
-    #     package='aruco_navigator',
-    #     executable='aruco_marker_detector',
-    #     name='aruco_marker_detector',
-    #     parameters=[{
-    #         'use_sim_time': use_sim_time
-    #     }],
-    #     output='screen'
-    # )
     mqtt_bridge = Node(
         package='mqtt_bridge_py',
         executable='mqtt_listener',

@@ -59,8 +59,11 @@ private:
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr init_service_;
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr home_service_;
     
-    // Timer
+    // Timers
     rclcpp::TimerBase::SharedPtr status_timer_;
+    rclcpp::TimerBase::SharedPtr gripper_monitor_timer_;
+    rclcpp::TimerBase::SharedPtr position_complete_timer_;
+    rclcpp::TimerBase::SharedPtr logistics_complete_timer_;
     
     // 현재 상태
     struct JointAngles {
@@ -71,6 +74,7 @@ private:
     
     JointAngles current_angles_;
     bool is_initialized_ = false;
+    bool is_gripper_closing_ = false;
     
     // 사전 정의된 위치들
     struct Position {
@@ -91,7 +95,7 @@ public:
         // Publishers
         status_pub_ = this->create_publisher<std_msgs::msg::String>("robot_arm/status", 10);
         joint_state_pub_ = this->create_publisher<sensor_msgs::msg::JointState>("robot_arm/joint_states", 10);
-        mission_complete_pub_ = this->create_publisher<std_msgs::msg::Int32>("mission_complete", 10);
+        mission_complete_pub_ = this->create_publisher<std_msgs::msg::Int32>("/robot_arm/mission_complete", 10);
         
         // Subscribers
         position_sub_ = this->create_subscription<geometry_msgs::msg::Point>(
@@ -290,6 +294,11 @@ private:
         
         RCLCPP_INFO(this->get_logger(), "그리퍼 열기");
         publishStatusMessage("✋ 그리퍼 열기");
+        
+        // 그리퍼 열기 완료 확인을 위한 타이머 시작
+        gripper_monitor_timer_ = this->create_wall_timer(
+            std::chrono::milliseconds(DELAY_MS),
+            std::bind(&DynamixelRobotArmNode::checkGripperOpenComplete, this));
     }
 
     void closeGripper() {
@@ -301,33 +310,100 @@ private:
         RCLCPP_INFO(this->get_logger(), "그리퍼 닫기 (전류 감지 중)");
         publishStatusMessage("👋 그리퍼 닫기 중...");
         
-        // 전류 감지 스레드 시작
-        std::thread([this]() {
-            while (rclcpp::ok()) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(DELAY_MS));
-                
-                uint16_t raw_current;
-                uint32_t pos;
-                uint8_t dxl_error = 0;
-                
-                packetHandler->read2ByteTxRx(portHandler, 4, ADDR_PRESENT_CURRENT, &raw_current, &dxl_error);
-                packetHandler->read4ByteTxRx(portHandler, 4, ADDR_PRESENT_POSITION, &pos, &dxl_error);
-                
-                int16_t current = toSigned(raw_current);
-                
-                if (std::abs(current) > CURRENT_THRESHOLD) {
-                    RCLCPP_INFO(this->get_logger(), "물체 감지됨! 전류: %d mA", current);
-                    packetHandler->write4ByteTxRx(portHandler, 4, ADDR_GOAL_POSITION, pos, &dxl_error);
-                    publishStatusMessage("🎯 물체 감지 완료!");
-                    break;
-                }
-                
-                if (pos < CLOSE_POSITION + 50) {
-                    publishStatusMessage("✅ 그리퍼 닫기 완료");
-                    break;
-                }
+        is_gripper_closing_ = true;
+        
+        // 그리퍼 닫기 완료 확인을 위한 타이머 시작
+        gripper_monitor_timer_ = this->create_wall_timer(
+            std::chrono::milliseconds(DELAY_MS),
+            std::bind(&DynamixelRobotArmNode::checkGripperCloseComplete, this));
+    }
+
+    void checkGripperOpenComplete() {
+        if (!is_initialized_) {
+            if (gripper_monitor_timer_) {
+                gripper_monitor_timer_->cancel();
+                gripper_monitor_timer_ = nullptr;
             }
-        }).detach();
+            return;
+        }
+        
+        uint32_t pos;
+        uint8_t dxl_error = 0;
+        packetHandler->read4ByteTxRx(portHandler, 4, ADDR_PRESENT_POSITION, &pos, &dxl_error);
+        
+        // 그리퍼가 열림 위치에 도달했는지 확인 (허용 오차 50)
+        if (pos > OPEN_POSITION - 50) {
+            RCLCPP_INFO(this->get_logger(), "그리퍼 열기 완료");
+            publishStatusMessage("✅ 그리퍼 열기 완료");
+            
+            // 완료 신호 발행
+            auto complete_msg = std_msgs::msg::Int32();
+            complete_msg.data = 1;
+            mission_complete_pub_->publish(complete_msg);
+            
+            // 타이머 정지
+            if (gripper_monitor_timer_) {
+                gripper_monitor_timer_->cancel();
+                gripper_monitor_timer_ = nullptr;
+            }
+        }
+    }
+
+    void checkGripperCloseComplete() {
+        if (!is_initialized_) {
+            if (gripper_monitor_timer_) {
+                gripper_monitor_timer_->cancel();
+                gripper_monitor_timer_ = nullptr;
+            }
+            return;
+        }
+        
+        uint16_t raw_current;
+        uint32_t pos;
+        uint8_t dxl_error = 0;
+        
+        packetHandler->read2ByteTxRx(portHandler, 4, ADDR_PRESENT_CURRENT, &raw_current, &dxl_error);
+        packetHandler->read4ByteTxRx(portHandler, 4, ADDR_PRESENT_POSITION, &pos, &dxl_error);
+        
+        int16_t current = toSigned(raw_current);
+        
+        // 전류 임계값 초과 시 (물체 감지)
+        if (std::abs(current) > CURRENT_THRESHOLD) {
+            RCLCPP_INFO(this->get_logger(), "물체 감지됨! 전류: %d mA", current);
+            packetHandler->write4ByteTxRx(portHandler, 4, ADDR_GOAL_POSITION, pos, &dxl_error);
+            publishStatusMessage("🎯 물체 감지 완료!");
+            
+            // 완료 신호 발행
+            auto complete_msg = std_msgs::msg::Int32();
+            complete_msg.data = 1;
+            mission_complete_pub_->publish(complete_msg);
+            
+            is_gripper_closing_ = false;
+            
+            // 타이머 정지
+            if (gripper_monitor_timer_) {
+                gripper_monitor_timer_->cancel();
+                gripper_monitor_timer_ = nullptr;
+            }
+        }
+        // 닫힘 위치에 도달했는지 확인 (허용 오차 50)
+        else if (pos < CLOSE_POSITION + 50) {
+            RCLCPP_INFO(this->get_logger(), "그리퍼 닫기 완료 (물체 없음)");
+            publishStatusMessage("✅ 그리퍼 닫기 완료");
+            
+            // 완료 신호 발행
+            auto complete_msg = std_msgs::msg::Int32();
+            complete_msg.data = 1;
+            mission_complete_pub_->publish(complete_msg);
+            
+            is_gripper_closing_ = false;
+            
+            // 타이머 정지
+            if (gripper_monitor_timer_) {
+                gripper_monitor_timer_->cancel();
+                gripper_monitor_timer_ = nullptr;
+            }
+        }
     }
 
     void publishStatusMessage(const std::string& message) {
@@ -352,6 +428,30 @@ private:
         joint_state_pub_->publish(joint_msg);
     }
 
+    void publishPositionComplete() {
+        auto complete_msg = std_msgs::msg::Int32();
+        complete_msg.data = 1;
+        mission_complete_pub_->publish(complete_msg);
+        
+        // 타이머 정지
+        if (position_complete_timer_) {
+            position_complete_timer_->cancel();
+            position_complete_timer_ = nullptr;
+        }
+    }
+
+    void publishLogisticsComplete() {
+        auto complete_msg = std_msgs::msg::Int32();
+        complete_msg.data = 1;
+        mission_complete_pub_->publish(complete_msg);
+        
+        // 타이머 정지
+        if (logistics_complete_timer_) {
+            logistics_complete_timer_->cancel();
+            logistics_complete_timer_ = nullptr;
+        }
+    }
+
     // 콜백 함수들
     void positionCallback(const geometry_msgs::msg::Point::SharedPtr msg) {
         RCLCPP_INFO(this->get_logger(), "위치+회전 명령 수신: (%.1f, %.1f, %.1f°)", msg->x, msg->y, msg->z);
@@ -359,25 +459,20 @@ private:
         // 1. 위치 이동 시작
         moveTo(msg->x, msg->y);
         
-        // 2. 회전 동시 실행 (z 값이 0이 아닌 경우)
+        // 2. 회전 실행 (z 값이 0이 아닌 경우)
         if (std::abs(msg->z) > 0.01) {
-            RCLCPP_INFO(this->get_logger(), "동시 회전 실행: %.1f°", msg->z);
-            publishStatusMessage("🔄 동시 이동+회전: (" + std::to_string(msg->x) + ", " + std::to_string(msg->y) + ") + " + std::to_string(msg->z) + "°");
+            RCLCPP_INFO(this->get_logger(), "회전 실행: %.1f°", msg->z);
+            publishStatusMessage("🔄 이동+회전: (" + std::to_string(msg->x) + ", " + std::to_string(msg->y) + ") + " + std::to_string(msg->z) + "°");
             
-            // 위치 이동과 동시에 회전 실행 (약간의 딜레이로 안정성 확보)
-            std::thread([this, rotation_angle = msg->z]() {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));  // 매우 짧은 딜레이
-                rotateGripper(rotation_angle);
-            }).detach();
+            // 약간의 딜레이 후 회전 실행
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            rotateGripper(msg->z);
         }
         
-        // 완료 신호 발행 (3초 후)
-        std::thread([this]() {
-            std::this_thread::sleep_for(std::chrono::seconds(3));
-            auto complete_msg = std_msgs::msg::Int32();
-            complete_msg.data = 1;
-            mission_complete_pub_->publish(complete_msg);
-        }).detach();
+        // 위치 이동 완료 타이머 시작 (0.5초 후)
+        position_complete_timer_ = this->create_wall_timer(
+            std::chrono::milliseconds(500),
+            std::bind(&DynamixelRobotArmNode::publishPositionComplete, this));
     }
 
     void gripperCallback(const std_msgs::msg::Bool::SharedPtr msg) {
@@ -400,13 +495,10 @@ private:
             RCLCPP_INFO(this->get_logger(), "물류 명령 수신: 위치 %d (%s)", position_id, pos.name.c_str());
             moveTo(pos.x, pos.y);
             
-            // 완료 신호 발행 (3초 후)
-            std::thread([this]() {
-                std::this_thread::sleep_for(std::chrono::seconds(3));
-                auto complete_msg = std_msgs::msg::Int32();
-                complete_msg.data = 1;
-                mission_complete_pub_->publish(complete_msg);
-            }).detach();
+            // 완료 신호 발행 타이머 시작 (1초 후)
+            logistics_complete_timer_ = this->create_wall_timer(
+                std::chrono::seconds(1),
+                std::bind(&DynamixelRobotArmNode::publishLogisticsComplete, this));
         } else {
             RCLCPP_ERROR(this->get_logger(), "잘못된 위치 ID: %d", position_id);
         }

@@ -3,12 +3,14 @@
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
+from std_msgs.msg import String
 from cv_bridge import CvBridge
 import cv2
 import numpy as np
 from ultralytics import YOLO
 import time
 import math
+import json
 from collections import deque
 
 class YoloObbNode(Node):
@@ -54,16 +56,29 @@ class YoloObbNode(Node):
             1
         )
         
-        # 퍼블리셔
-        self.result_pub = self.create_publisher(Image, '/yolo_result', 1)
+        # 검출 트리거 구독
+        self.detection_trigger_sub = self.create_subscription(
+            String,
+            '/yolo/detection_trigger',
+            self.detection_trigger_callback,
+            10
+        )
         
-        # OpenCV 윈도우 설정
-        cv2.namedWindow('YOLO Detection', cv2.WINDOW_AUTOSIZE)
+        # 퍼블리셔들
+        self.result_pub = self.create_publisher(Image, '/yolo_result', 1)
+        self.detection_result_pub = self.create_publisher(String, '/yolo/detection_result', 10)
+        
+        # OpenCV 윈도우 설정 제거
+        # cv2.namedWindow('YOLO Detection', cv2.WINDOW_AUTOSIZE)
         
         # 처리 타이머 (10Hz로 낮춤 - 더 안정적)
         self.timer = self.create_timer(0.1, self.process_images)
         
-        self.get_logger().info('YOLO OBB Node started - Press ESC to quit')
+        # 검출 요청 플래그
+        self.detection_requested = False
+        self.target_name = None
+        
+        self.get_logger().info('YOLO OBB Node started - No display mode')
 
     def color_callback(self, msg):
         try:
@@ -76,6 +91,16 @@ class YoloObbNode(Node):
             self.latest_depth_image = self.bridge.imgmsg_to_cv2(msg, "16UC1")
         except Exception as e:
             self.get_logger().error(f'Depth callback error: {str(e)}')
+
+    def detection_trigger_callback(self, msg):
+        """검출 트리거 수신"""
+        try:
+            trigger_data = json.loads(msg.data)
+            self.target_name = trigger_data.get('target', 'unknown')
+            self.detection_requested = True
+            self.get_logger().info(f'🔍 검출 요청 수신: {self.target_name}')
+        except json.JSONDecodeError as e:
+            self.get_logger().error(f'검출 트리거 파싱 오류: {e}')
 
     def get_depth_at_point(self, x, y):
         """특정 픽셀 위치의 depth 값 반환 (mm 단위) - 안정화된 버전"""
@@ -114,22 +139,84 @@ class YoloObbNode(Node):
             # YOLO 추론
             results = self.model.predict(source=self.latest_color_image, imgsz=640, conf=self.conf_threshold, verbose=False)
             
-            # 결과 그리기
+            # 결과 그리기 (표시용이 아닌 결과 이미지 생성용)
             annotated = self.draw_results(self.latest_color_image, results[0])
             
-            # 결과 이미지 표시
-            cv2.imshow('YOLO Detection', annotated)
+            # 검출 요청이 있으면 결과 발행
+            if self.detection_requested:
+                self.publish_detection_results(results[0])
+                self.detection_requested = False
             
-            # ESC 키로 종료
-            key = cv2.waitKey(1) & 0xFF
-            if key == 27:
-                self.get_logger().info('ESC pressed, shutting down...')
-                rclpy.shutdown()
+            # 결과 이미지 표시 제거
+            # cv2.imshow('YOLO Detection', annotated)
+            
+            # ESC 키 체크 제거 (GUI 없이 실행)
+            # key = cv2.waitKey(1) & 0xFF
+            # if key == 27:
+            #     self.get_logger().info('ESC pressed, shutting down...')
+            #     rclpy.shutdown()
             
         except Exception as e:
             self.get_logger().error(f'Processing error: {str(e)}')
 
+    def publish_detection_results(self, result):
+        """검출 결과를 토픽으로 발행"""
+        detected_objects = []
+        
+        if result.obb is not None and len(result.obb) > 0:
+            obb_coords = result.obb.xyxyxyxy.cpu().numpy()
+            
+            for i, coords in enumerate(obb_coords):
+                # OBB 좌표 (x0, y0, x1, y1, x2, y2, x3, y3)
+                points = coords.reshape(4, 2).astype(np.int32)
+                
+                # 변의 길이 계산
+                len_side1 = np.linalg.norm(points[1] - points[0])
+                len_side2 = np.linalg.norm(points[2] - points[1])
+                
+                # 짧은 변 기준으로 각도 계산
+                if len_side1 <= len_side2:
+                    angle = math.degrees(math.atan2(points[1][1] - points[0][1], points[1][0] - points[0][0]))
+                else:
+                    angle = math.degrees(math.atan2(points[2][1] - points[1][1], points[2][0] - points[1][0]))
+                
+                # 각도를 0-360 범위로 정규화
+                if angle < 0:
+                    angle += 360
+                
+                # 중심점 계산
+                center_x = np.mean(points[:, 0])
+                center_y = np.mean(points[:, 1])
+                
+                # 중심점의 depth 값 (depth는 사용하지 않지만 일단 계산)
+                depth_mm = self.get_depth_at_point(int(center_x), int(center_y))
+                
+                detected_object = {
+                    'id': i,
+                    'pixel_x': float(center_x),
+                    'pixel_y': float(center_y),
+                    'angle': float(angle),
+                    'depth_mm': float(depth_mm) if depth_mm is not None else None
+                }
+                
+                detected_objects.append(detected_object)
+                
+                self.get_logger().info(f'검출 결과 #{i+1}: x={center_x:.0f}, y={center_y:.0f}, deg={angle:.0f}°')
+        
+        # 검출 결과 발행
+        result_msg = String()
+        result_data = {
+            'target': self.target_name,
+            'timestamp': time.time(),
+            'objects': detected_objects
+        }
+        result_msg.data = json.dumps(result_data)
+        self.detection_result_pub.publish(result_msg)
+        
+        self.get_logger().info(f'✅ 검출 결과 발행: {len(detected_objects)}개 객체')
+
     def draw_results(self, image, result):
+        """결과 그리기 (이미지 토픽 발행용)"""
         annotated = image.copy()
         
         if result.obb is not None and len(result.obb) > 0:
@@ -176,19 +263,12 @@ class YoloObbNode(Node):
                 if start_point is not None and end_point is not None:
                     cv2.arrowedLine(annotated, tuple(start_point), tuple(end_point), (0, 255, 255), 2, tipLength=0.3)
                 
-                # 핵심 정보 표시: x, y, deg, depth
-                if depth_mm is not None:
-                    info_text = f"x:{center_x:.0f} y:{center_y:.0f} deg:{angle:.0f} depth:{depth_mm:.0f}mm"
-                else:
-                    info_text = f"x:{center_x:.0f} y:{center_y:.0f} deg:{angle:.0f} depth:N/A"
+                # 핵심 정보 표시: x, y, deg (depth 제외)
+                info_text = f"x:{center_x:.0f} y:{center_y:.0f} deg:{angle:.0f}"
                 
                 # 텍스트
                 cv2.putText(annotated, info_text, (int(center_x) - 70, int(center_y) - 20),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-                
-                # 터미널 로그
-                depth_str = f"{depth_mm:.0f}mm" if depth_mm is not None else "N/A"
-                self.get_logger().info(f'Product #{i+1}: x={center_x:.0f}, y={center_y:.0f}, deg={angle:.0f}, depth={depth_str}')
         
         return annotated
 
@@ -203,7 +283,7 @@ def main(args=None):
     finally:
         if 'node' in locals():
             node.destroy_node()
-        cv2.destroyAllWindows()
+        # cv2.destroyAllWindows() 제거
         rclpy.shutdown()
 
 if __name__ == '__main__':

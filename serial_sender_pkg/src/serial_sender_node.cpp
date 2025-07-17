@@ -6,7 +6,6 @@
 #include <atomic>
 #include <vector>
 
-
 class EnhancedSerialNode : public rclcpp::Node {
 public:
     EnhancedSerialNode() : Node("enhanced_serial_node"), running_(true) {
@@ -62,21 +61,91 @@ public:
 private:
     void topic_callback(const std_msgs::msg::Int32::SharedPtr msg) {
         int data = msg->data;
-        std::vector<std::string> valid_floors = {"0", "30", "32", "34", "33"};
+        
+        // 공백이 포함된 명령어 유지
+        std::vector<std::string> valid_floors = {
+            "0",        // 0: 기본층
+            "30",       // 1: 1층
+            "32",       // 2: 2층  
+            "34",       // 3: 3층
+            "33",       // 4: 4층
+            "",         // 5: 빈 명령
+            "",         // 6: 빈 명령
+            "",         // 7: 빈 명령
+            "u 2600",   // 8: 리프트 위로 (공백 유지)
+            "d 2600"    // 9: 리프트 아래로 (공백 유지)
+        };
 
+        // 범위 체크 추가
+        if (data < 0 || data >= static_cast<int>(valid_floors.size())) {
+            RCLCPP_WARN(this->get_logger(), "⚠️ 잘못된 층 번호: %d", data);
+            return;
+        }
 
         const std::string& floor_command = valid_floors[data];
+        
+        // 빈 명령은 전송하지 않음
+        if (floor_command.empty()) {
+            RCLCPP_WARN(this->get_logger(), "⚠️ 빈 명령은 전송하지 않음: %d", data);
+            return;
+        }
 
         if (serialPort_.IsOpen()) {
-            serialPort_.Write(floor_command);  // ✅ 올바른 사용
-            serialPort_.Write("\n");  // 줄바꿈 문자 추가
-            RCLCPP_INFO(this->get_logger(), "🏢 리프트에 층 전송: '%s'", floor_command.c_str());
+            try {
+                // 방법 1: 한 번에 전체 명령 전송
+                std::string full_command = floor_command + "\n";
+                serialPort_.Write(full_command);
+                
+                // 방법 2: 또는 바이트 단위로 전송 (더 안전)
+                // for (char c : floor_command) {
+                //     serialPort_.WriteByte(c);
+                // }
+                // serialPort_.WriteByte('\n');
+                
+                RCLCPP_INFO(this->get_logger(), "🏢 리프트에 층 전송: '%s'", floor_command.c_str());
+                
+                // 특별한 경우 (u 2400, d 2400)에 대한 자동 완료 신호 발행
+                if (floor_command == "u 2400" || floor_command == "d 2400") {
+                    // 2초 후 자동으로 완료 신호 발행 (실제 하드웨어 응답 시뮬레이션)
+                    std::thread([this, floor_command]() {
+                        std::this_thread::sleep_for(std::chrono::seconds(2));
+                        auto msg = std_msgs::msg::Int32();
+                        msg.data = 1;
+                        lift_complete_pub_->publish(msg);
+                        RCLCPP_INFO(this->get_logger(), "✅ 리프트 완료 신호 발행: %s 완료", floor_command.c_str());
+                    }).detach();
+                }
+                
+            } catch (const std::exception &e) {
+                RCLCPP_ERROR(this->get_logger(), "❌ 시리얼 쓰기 오류: %s", e.what());
+                
+                // 에러 발생 시에도 완료 신호 발행 (시스템이 멈추지 않도록)
+                if (floor_command == "u 2400" || floor_command == "d 2400") {
+                    std::thread([this]() {
+                        std::this_thread::sleep_for(std::chrono::seconds(1));
+                        auto msg = std_msgs::msg::Int32();
+                        msg.data = 1;
+                        lift_complete_pub_->publish(msg);
+                        RCLCPP_INFO(this->get_logger(), "✅ 에러 후 리프트 완료 신호 발행");
+                    }).detach();
+                }
+            }
         } else {
             RCLCPP_WARN(this->get_logger(), "⚠️ 시리얼 포트가 닫혀있음");
+            
+            // 포트가 닫혀있어도 완료 신호 발행 (시스템이 멈추지 않도록)
+            if (floor_command == "u 2400" || floor_command == "d 2400") {
+                std::thread([this]() {
+                    std::this_thread::sleep_for(std::chrono::seconds(1));
+                    auto msg = std_msgs::msg::Int32();
+                    msg.data = 1;
+                    lift_complete_pub_->publish(msg);
+                    RCLCPP_INFO(this->get_logger(), "✅ 포트 닫힘 상태에서 리프트 완료 신호 발행");
+                }).detach();
+            }
         }
     }
 
-    
     void serialReadLoop() {
         std::string buffer;
         
