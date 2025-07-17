@@ -49,6 +49,7 @@ class LogisticsRobotController(Node):
             self.encoder_callback,
             10)
         
+        self.mission_complete_pub = self.create_publisher(Int32, '/mission_complete', 10)
         self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         
         self.wheel_radius = 0.103
@@ -116,7 +117,7 @@ class LogisticsRobotController(Node):
         self.current_logistics_command = None
         self.logistics_mission_active = False
         self.sequence_delay_counter = 0
-        self.sequence_delay_threshold = 20
+        self.sequence_delay_threshold = 10
         
         # 현재 위치 추적 추가
         self.current_position = 0  # 초기 위치 0
@@ -142,14 +143,14 @@ class LogisticsRobotController(Node):
         
         # 물류 명령 정의 (단순화된 기본 명령)
         self.logistics_commands = {
-            0: [LogisticsCommand(0, 200)],
-            1: [LogisticsCommand(0, 160)],
-            2: [LogisticsCommand(0, 130)],
-            3: [LogisticsCommand(0, 100)],
-            4: [LogisticsCommand(2, 200)],
-            5: [LogisticsCommand(2, 160)],
-            6: [LogisticsCommand(2, 130)],
-            7: [LogisticsCommand(0, 230)]
+            0: [LogisticsCommand(0, 241)], #선반
+            1: [LogisticsCommand(0, 200)],
+            2: [LogisticsCommand(0, 170)],
+            3: [LogisticsCommand(0, 140)],
+            4: [LogisticsCommand(2, 267)],
+            5: [LogisticsCommand(2, 237)],
+            6: [LogisticsCommand(2, 207)],
+            7: [LogisticsCommand(0, 256)]
         }
         
         self.get_logger().info('=== LOGISTICS ROBOT CONTROLLER STARTED ===')
@@ -174,7 +175,7 @@ class LogisticsRobotController(Node):
             path[-1] = LogisticsCommand(target_marker, target_distance)
             return path
         # 4번에서 5번 또는 6번으로 이동 시 직접 이동
-        elif current_position in[4, 5, 6] and target_command == 7:
+        elif current_position in [4, 5, 6] and target_command == 7:
             path = self.paths[(2, 0)].copy()
             path[-1] = LogisticsCommand(target_marker, target_distance)
             return path
@@ -222,6 +223,7 @@ class LogisticsRobotController(Node):
     
     def complete_logistics_mission(self):
         """물류 미션 완료"""
+        
         self.logistics_mission_active = False
         self.current_logistics_command = None
         self.target_id = None
@@ -231,7 +233,9 @@ class LogisticsRobotController(Node):
         if self.current_command_num is not None:
             self.current_position = self.current_command_num
             self.get_logger().info(f'Current position updated to: {self.current_position}')
-        
+            complete_msg = Int32()
+            complete_msg.data = 1
+            self.mission_complete_pub.publish(complete_msg)
         self.get_logger().info('=== LOGISTICS MISSION COMPLETED ===')
         self.get_logger().info('All sequences finished successfully!')
         self.get_logger().info('Robot returned to IDLE state')
@@ -480,12 +484,13 @@ class LogisticsRobotController(Node):
         current_time = self.get_clock().now()
         align_duration = (current_time - self.align_start_time).nanoseconds / 1e9
         
-        if align_duration > 2.0:
+        if align_duration > 1.5:
             self.get_logger().info('Alignment timeout (2s) reached - forcing completion!')
             delattr(self, 'align_start_time')
             self.state = RobotState.FINISHED
             self.state_change_counter = 0
             self.reset_integrals()
+            self.stop_robot()
             return
         
         dt = (current_time - self.last_control_time).nanoseconds / 1e9
@@ -493,6 +498,7 @@ class LogisticsRobotController(Node):
         
         if dt > 0.5:
             self.reset_integrals()
+            self.stop_robot()
             return
         
         twist = Twist()
@@ -539,7 +545,7 @@ class LogisticsRobotController(Node):
                 angular_vel = -(self.kp_angular * angle_error + 
                             self.ki_angular * self.integral_angular)
                 angular_vel = max(-self.max_angular_vel * 0.4, min(self.max_angular_vel * 0.4, angular_vel))
-                twist.angular.z = angular_vel
+                # twist.angular.z = angular_vel
         
         if abs(distance_error) > self.distance_tolerance * 0.5:
             self.integral_distance += distance_error * dt

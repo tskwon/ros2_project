@@ -12,6 +12,7 @@ find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(dynamixel_sdk REQUIRED)
+find_package(std_srvs REQUIRED)
 
 # include headers
 include_directories(include)
@@ -21,19 +22,18 @@ add_executable(coordinate_input_node src/coordinate_input_node.cpp)
 ament_target_dependencies(coordinate_input_node
   rclcpp
   geometry_msgs
+  std_srvs
 )
 
 # build: robot_arm_node
-add_executable(robot_arm_node
-  src/robot_arm_node.cpp
-  src/robot_arm.cpp
-)
+add_executable(robot_arm_node src/robot_arm.cpp )
 target_include_directories(robot_arm_node PUBLIC include)
 ament_target_dependencies(robot_arm_node
   rclcpp
   geometry_msgs
   sensor_msgs
   dynamixel_sdk
+  std_srvs
 )
 
 # install targets
