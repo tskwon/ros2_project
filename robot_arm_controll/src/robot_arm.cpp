@@ -465,7 +465,7 @@ private:
             publishStatusMessage("🔄 이동+회전: (" + std::to_string(msg->x) + ", " + std::to_string(msg->y) + ") + " + std::to_string(msg->z) + "°");
             
             // 약간의 딜레이 후 회전 실행
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
             rotateGripper(msg->z);
         }
         

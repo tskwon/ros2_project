@@ -38,16 +38,6 @@ class RobotControl(Node):
         self.current_quantity_processed = 0
         self.detected_objects = []
         
-        # 카메라 좌표 → 로봇 팔 좌표 변환 파라미터 (임의 설정)
-        self.camera_to_robot_params = {
-            'scale_x': 0.05,    # 픽셀당 cm 변환 비율
-            'scale_y': 0.05,
-            'offset_x': -32.0,  # 카메라 중심(640/2=320)을 로봇 좌표 0으로 변환
-            'offset_y': -24.0,  # 카메라 중심(480/2=240)을 로봇 좌표 0으로 변환
-            'base_x': 0.0,      # 로봇 팔 베이스 좌표
-            'base_y': 30.0      # 로봇 팔 베이스 좌표
-        }
-        
         # Publishers
         self.robot_command_pub = self.create_publisher(Int32, '/logistics/command', 10)
         self.lift_command_pub = self.create_publisher(Int32, '/lift/floor', 10)
@@ -183,8 +173,8 @@ class RobotControl(Node):
         self.get_logger().info(f'🎯 새 미션 시작: {self.current_mission["name"]} (수량: {self.current_mission["quantity"]})')
         
         # 1단계: 로봇 이동
-        # self.execute_robot_movement()
-        self.execute_lift_operation()
+        self.execute_robot_movement()
+        # self.execute_lift_operation()
 
     def execute_robot_movement(self):
         """로봇 이동 단계"""
@@ -520,7 +510,7 @@ class RobotControl(Node):
         if self.current_state == MissionState.WAITING_ROBOT_ARM_COMPLETE:
             self.get_logger().info(f'✅ 로봇 팔 이동 완료 (응답: {msg.data})')
             # 다음 단계: 리프트 위로 동작
-            time.sleep(2)
+            time.sleep(1.5)
             self.execute_lift_up()
             
         elif self.current_state == MissionState.WAITING_ROBOT_ARM_DELIVERY_COMPLETE:
@@ -528,9 +518,9 @@ class RobotControl(Node):
             self.current_quantity_processed += 1
             
             # 로봇팔 도착했을떄 그리퍼 열리는 속도
-            time.sleep(0.5)
+            time.sleep(1.5)
             self.open_gripper_for_delivery()
-            
+            time.sleep(1.5)
             # 수량 체크
             if self.current_quantity_processed < self.current_mission['quantity']:
                 self.get_logger().info(f'📦 남은 수량: {self.current_mission["quantity"] - self.current_quantity_processed}')

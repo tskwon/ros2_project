@@ -14,7 +14,7 @@ class ArucoDetector(Node):
         # 카메라 토픽 구독
         self.subscription = self.create_subscription(
             Image,
-            '/camera/camera/color/image_raw',  # 카메라 토픽 이름
+            '/d435/realsense_d435/color/image_raw',  # 카메라 토픽 이름
             self.image_callback,
             1)
         # 포즈 메시지 퍼블리셔

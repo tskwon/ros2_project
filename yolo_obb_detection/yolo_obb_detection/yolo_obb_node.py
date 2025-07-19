@@ -19,7 +19,7 @@ class YoloObbNode(Node):
         
         # 파라미터
         self.declare_parameter('model_path', '/home/xotn/ros2_ws/src/yolo_obb_detection/models/best.pt')
-        self.declare_parameter('confidence_threshold', 0.30)
+        self.declare_parameter('confidence_threshold', 0.80)
         
         model_path = self.get_parameter('model_path').get_parameter_value().string_value
         self.conf_threshold = self.get_parameter('confidence_threshold').get_parameter_value().double_value
