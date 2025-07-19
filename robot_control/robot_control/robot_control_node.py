@@ -360,7 +360,7 @@ class RobotControl(Node):
     def execute_robot_arm_delivery(self):
         """로봇 팔 배송 위치로 이동 (15, -15)"""
         delivery_x = -15.0
-        delivery_y = 20.0
+        delivery_y = 15.0
         
         self.get_logger().info(f'🦾 로봇 팔 배송 위치로 이동: ({delivery_x}, {delivery_y})')
         self.current_state = MissionState.ROBOT_ARM_DELIVERY
@@ -556,6 +556,7 @@ class RobotControl(Node):
         self.current_quantity_processed = 0
         self.detected_objects = []
         self.current_state = MissionState.IDLE
+        
         arm_msg = Point()
         arm_msg.x = float(4.0)
         arm_msg.y = float(0.0)
