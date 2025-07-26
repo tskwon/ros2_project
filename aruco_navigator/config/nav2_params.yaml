@@ -1,0 +1,165 @@
+/**:
+  ros__parameters:
+    use_sim_time: false # 시뮬레이션 시간이 아님
+
+    # ---
+    ## Lifecycle Manager for Navigation
+    # ---
+    lifecycle_manager_navigation:
+      ros__parameters:
+        autostart: true
+        node_names:
+          - controller_server
+          - planner_server
+          - smoother_server
+          - behavior_server
+          - bt_navigator
+          - waypoint_follower
+          - velocity_smoother
+          # collision_monitor는 obstacle_layer가 비활성화되면 필요 없어짐
+          # - collision_monitor
+
+    # ---
+    ## Controller Server (Local Planner)
+    # ---
+    controller_server:
+      ros__parameters:
+        use_sim_time: false
+        controller_frequency: 20.0
+        min_x_velocity_threshold: 0.001
+        min_y_velocity_threshold: 0.001
+        min_theta_velocity_threshold: 0.001
+
+        # DWBLocalPlanner 설정
+        controller_plugins: ["FollowPath"]
+        FollowPath:
+          plugin: "dwb_core::DWBLocalPlanner"
+          critics: ["GoalCritic", "PathAlignCritic", "RotateToGoalCritic"] # 최소한의 critic만 사용
+          
+          # 각 critic 설정 (값은 로봇 동역학 및 필요에 따라 튜닝)
+          GoalCritic:
+            scale: 20.0
+          PathAlignCritic:
+            scale: 10.0
+          RotateToGoalCritic:
+            scale: 5.0
+          
+          # DWB 트래젝토리 샘플링 파라미터 (로봇 동역학에 따라 튜닝)
+          min_vel_x: 0.0
+          max_vel_x: 0.5 # 최대 선속도 (m/s)
+          min_vel_y: -0.0 # 옴니휠이 아니라면 0.0
+          max_vel_y: 0.0 # 옴니휠이 아니라면 0.0
+          min_vel_theta: -1.0 # 최소 각속도 (rad/s)
+          max_vel_theta: 1.0 # 최대 각속도 (rad/s)
+          
+          # 가속도 제한
+          acc_lim_x: 1.5
+          acc_lim_y: 0.0 # 옴니휠이 아니라면 0.0
+          acc_lim_theta: 2.0
+          
+          # DWB 내부 파라미터
+          sim_time: 1.0
+          sampling_x: 5
+          sampling_y: 1 # 옴니휠이 아니라면 1
+          sampling_theta: 20
+
+    # ---
+    ## Planner Server (Global Planner)
+    # ---
+    planner_server:
+      ros__parameters:
+        use_sim_time: false
+        planner_plugins: ["GridBased"]
+        GridBased:
+          plugin: "nav2_navfn_planner::NavfnPlanner"
+          use_astar: false
+          allow_unknown: true # 미지 영역 허용 (센서 없으므로 항상 미지)
+          tolerance: 0.5
+
+    # ---
+    ## Smoother Server
+    # ---
+    smoother_server:
+      ros__parameters:
+        use_sim_time: false
+        smoother_plugins: ["simple_smoother"]
+        simple_smoother:
+          plugin: "nav2_smoother::SimpleSmoother"
+          tolerance: 0.05
+          max_iterations: 1000
+          w_data: 0.15
+          w_smooth: 0.05
+          w_cost: 0.1
+
+    # ---
+    ## Behavior Server, BT Navigator, Waypoint Follower, Velocity Smoother
+    # ---
+    # 이 노드들은 기본 설정을 사용하거나 필요에 따라 최소한으로 구성
+    behavior_server:
+      ros__parameters:
+        use_sim_time: false
+    bt_navigator:
+      ros__parameters:
+        use_sim_time: false
+    waypoint_follower:
+      ros__parameters:
+        use_sim_time: false
+    velocity_smoother:
+      ros__parameters:
+        use_sim_time: false
+
+    # ---
+    ## Global Costmap (odom 프레임, 센서 데이터 사용 안함)
+    # ---
+    global_costmap:
+      ros__parameters:
+        global_frame: odom # <-- odom 프레임을 기본으로 사용
+        robot_base_frame: base_link
+        update_frequency: 5.0
+        publish_frequency: 2.0
+        width: 10.0 # Costmap 크기 (미터)
+        height: 10.0
+        resolution: 0.05 # 해상도 (미터/셀)
+        
+        # 플러그인에서 obstacle_layer를 제거
+        plugins: ["static_layer", "inflation_layer"]
+        static_layer:
+          plugin: "nav2_costmap_2d::StaticLayer"
+          map_subscribe_transient_local: True
+          # 이 레이어는 odom_frame에서는 의미가 없지만, 구조상 포함
+
+        # obstacle_layer는 완전히 제거하거나 enabled: False로 설정
+        # obstacle_layer:
+        #   plugin: "nav2_costmap_2d::ObstacleLayer"
+        #   enabled: False # <--- 활성화하지 않음
+        
+        inflation_layer:
+          plugin: "nav2_costmap_2d::InflationLayer"
+          cost_scaling_factor: 3.0
+          inflation_radius: 0.5 # 로봇 주변의 인플레이션 반경 (충돌 방지)
+
+    # ---
+    ## Local Costmap (odom 프레임, 센서 데이터 사용 안함)
+    # ---
+    local_costmap:
+      ros__parameters:
+        global_frame: odom # <-- odom 프레임을 기본으로 사용
+        robot_base_frame: base_link
+        update_frequency: 5.0
+        publish_frequency: 2.0
+        width: 5.0 # Costmap 크기 (미터)
+        height: 5.0
+        resolution: 0.05 # 해상도 (미터/셀)
+        
+        # 플러그인에서 obstacle_layer를 제거
+        plugins: ["inflation_layer"] # static_layer도 필요 없음
+        
+        # obstacle_layer는 완전히 제거하거나 enabled: False로 설정
+        # obstacle_layer:
+        #   plugin: "nav2_costmap_2d::ObstacleLayer"
+        #   enabled: False # <--- 활성화하지 않음
+
+        inflation_layer:
+          plugin: "nav2_costmap_2d::InflationLayer"
+          cost_scaling_factor: 3.0
+          inflation_radius: 0.5
