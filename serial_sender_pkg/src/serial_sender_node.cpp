@@ -73,12 +73,13 @@ private:
             "35",       // 6: 3층 반납
             "40",       // 7: 1층 고객 상자 적재 
             "43",       // 8: 2층 고객 상자 반납
-            "u 2500",   // 9: 리프트 위로 (공백 유지)
-            "d 2500"    // 10: 리프트 아래로 (공백 유지)
+            "u 2550",   // 9: 리프트 위로 (공백 유지)
+            "d 2550",    // 10: 리프트 아래로 (공백 유지)
+            "7"
         };
 
         // 범위 체크 추가
-        if (data < 0 || data >= static_cast<int>(valid_floors.size())) {
+        if (data < 0 || data > static_cast<int>(valid_floors.size())) {
             RCLCPP_WARN(this->get_logger(), "⚠️ 잘못된 층 번호: %d", data);
             return;
         }
@@ -106,7 +107,7 @@ private:
                 RCLCPP_INFO(this->get_logger(), "🏢 리프트에 층 전송: '%s'", floor_command.c_str());
                 
                 // 특별한 경우 (u 2400, d 2400)에 대한 자동 완료 신호 발행
-                if (floor_command == "u 2400" || floor_command == "d 2400") {
+                if (floor_command == "u 2550" || floor_command == "d 2550") {
                     // 2초 후 자동으로 완료 신호 발행 (실제 하드웨어 응답 시뮬레이션)
                     std::thread([this, floor_command]() {
                         std::this_thread::sleep_for(std::chrono::seconds(2));

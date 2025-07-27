@@ -66,7 +66,7 @@ class LogisticsRobotController(Node):
         self.target_rotation_angle = math.pi / 2.8
         
         self.target_distance = None
-        self.distance_tolerance = 0.05
+        self.distance_tolerance = 0.015
         self.angle_tolerance = 0.04
         self.lateral_tolerance = 0.1
         
@@ -74,12 +74,12 @@ class LogisticsRobotController(Node):
         self.max_angular_vel = 0.7
         self.search_angular_vel = 0.3
         
-        self.kp_distance = 0.4
-        self.ki_distance = 0.01
+        self.kp_distance = 0.15
+        self.ki_distance = 0.0001
         self.kp_lateral = 0.3
-        self.ki_lateral = 0.007
+        self.ki_lateral = 0.0002
         self.kp_angular = 0.5
-        self.ki_angular = 0.08
+        self.ki_angular = 0.0005
         
         self.integral_distance = 0.0
         self.integral_lateral = 0.0
@@ -105,7 +105,8 @@ class LogisticsRobotController(Node):
         self.control_timer = self.create_timer(0.1, self.control_loop)
         
         self.state_change_counter = 0
-        self.state_change_threshold = 8
+        # self.state_change_threshold = 8
+        self.state_change_threshold = 2        
         
         self.mission_completed = False
         self.current_mission_id = None
@@ -143,13 +144,13 @@ class LogisticsRobotController(Node):
         
         # 물류 명령 정의 (단순화된 기본 명령)
         self.logistics_commands = {
-            0: [LogisticsCommand(0, 213)],  # 초기위치
-            1: [LogisticsCommand(0, 200)],
+            0: [LogisticsCommand(0, 215)],  # 초기위치
+            1: [LogisticsCommand(0, 199)],
             2: [LogisticsCommand(0, 167)],
-            3: [LogisticsCommand(0, 136)],
-            4: [LogisticsCommand(2, 274)],
-            5: [LogisticsCommand(2, 240)],
-            6: [LogisticsCommand(2, 208)],
+            3: [LogisticsCommand(0, 135)],
+            4: [LogisticsCommand(2, 275)],
+            5: [LogisticsCommand(2, 243)],
+            6: [LogisticsCommand(2, 211)],
             7: [LogisticsCommand(2, 117)]  # 0번으로 돌아가기
         }
         
@@ -177,7 +178,7 @@ class LogisticsRobotController(Node):
         # 4번에서 5번 또는 6번으로 이동 시 직접 이동
         elif current_position in [4, 5, 6, 7] and target_command == 0:
             path = self.paths[(2, 0)].copy()
-            path[-1] = LogisticsCommand(target_marker, target_distance)
+            path[-1] = LogisticsCommand(0, 247)
             return path
         # # 그 외의 경우 기본 명령 사용
         else:
@@ -434,7 +435,9 @@ class LogisticsRobotController(Node):
         if abs(distance_error) < self.distance_tolerance:
             self.state_change_counter += 1
             if self.state_change_counter >= self.state_change_threshold:
-                self.state = RobotState.ALIGNING
+                # self.state = RobotState.ALIGNING
+                self.state = RobotState.FINISHED
+                self.stop_robot()
                 self.state_change_counter = 0
                 self.reset_integrals()
                 self.get_logger().info('Target distance reached! Starting alignment...')
@@ -457,9 +460,9 @@ class LogisticsRobotController(Node):
                        self.ki_lateral * self.integral_lateral)
         angular_vel = max(-self.max_angular_vel, min(self.max_angular_vel, angular_vel))
         
-        if self.marker_distance < 0.15:
-            twist.linear.x = -0.05
-            twist.angular.z = angular_vel * 0.5
+        if self.marker_distance < 0.08:
+            twist.linear.x = -0.1
+            twist.angular.z = angular_vel * 0.55
         else:
             twist.linear.x = linear_vel 
             twist.angular.z = angular_vel
@@ -484,8 +487,8 @@ class LogisticsRobotController(Node):
         current_time = self.get_clock().now()
         align_duration = (current_time - self.align_start_time).nanoseconds / 1e9
         
-        if align_duration >= 1.5:
-            self.get_logger().info('Alignment timeout (2s) reached - forcing completion!')
+        if align_duration >= 1.0:
+            self.get_logger().info('Alignment timeout (1s) reached - forcing completion!')
             delattr(self, 'align_start_time')
             self.state = RobotState.FINISHED
             self.state_change_counter = 0
@@ -504,13 +507,13 @@ class LogisticsRobotController(Node):
         twist = Twist()
         
         distance_error = self.marker_distance - self.target_distance
-        if abs(distance_error) > self.distance_tolerance * 3:
-            self.state = RobotState.APPROACHING
-            self.state_change_counter = 0
-            delattr(self, 'align_start_time')
-            self.reset_integrals()
-            self.get_logger().info('Distance too far, returning to approach mode...')
-            return
+        # if abs(distance_error) > self.distance_tolerance * 4:
+        #     self.state = RobotState.APPROACHING
+        #     self.state_change_counter = 0
+        #     delattr(self, 'align_start_time')
+        #     self.reset_integrals()
+        #     self.get_logger().info('Distance too far, returning to approach mode...')
+        #     return
         
         lateral_error = self.marker_lateral
         angle_error = self.marker_pitch

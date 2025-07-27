@@ -233,12 +233,12 @@ class RobotControl(Node):
 
     def camera_to_robot_coordinates(self, pixel_x, pixel_y, angle_deg):
         # Bilinear 보간
-        robot_x = (1 / 15) * pixel_y - (113 / 15) - 0.5
-        robot_y = (-19 / 286) * pixel_x + (12697 / 286) + 0.3
+        # robot_x = (1 / 15) * pixel_y - (113 / 15) - 0.5
+        # robot_y = (-19 / 286) * pixel_x + (12697 / 286) + 0.3
         
         
-        # robot_x = (1 / 15) * (pixel_y - 113)
-        # robot_y = (-19 / 286) * (pixel_x - 668.263) + 0.3
+        robot_x = (1 / 15) * (pixel_y - 113)
+        robot_y = (-19 / 286) * (pixel_x - 668.263) 
 
 
         return robot_x, robot_y, angle_deg - 180.0
